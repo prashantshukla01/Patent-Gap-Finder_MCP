@@ -1,0 +1,43 @@
+[project]
+name = "patent-gap-finder"
+version = "0.1.0"
+description = "MCP server that analyzes research papers to discover patentable white-space opportunities"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Patent Gap Finder Team" }]
+
+dependencies = [
+    "fastmcp>=2.0",
+    "pymupdf>=1.24",
+    "pdfplumber>=0.11",
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+patent-gap-finder = "patent_gap_finder.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patent_gap_finder"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
