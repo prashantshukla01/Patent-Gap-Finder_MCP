@@ -1,0 +1,215 @@
+"""SQLAlchemy 2.0 ORM models for analysis sessions and extracted claims.
+
+Uses ``Mapped`` / ``mapped_column`` declarative style.  UUIDs are
+generated server-side (or in Python for SQLite compatibility).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+)
+from sqlalchemy.types import JSON, TypeDecorator
+
+
+# ──────────────────────────────────────────────────────────────────────
+# UUID type that works with both Postgres and SQLite
+# ──────────────────────────────────────────────────────────────────────
+
+
+class UUIDType(TypeDecorator):
+    """Platform-agnostic UUID type.
+
+    Uses PostgreSQL's native UUID when available, falls back to
+    CHAR(36) for SQLite.
+    """
+
+    impl = String(36)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return str(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return str(value)
+        return value
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=False))
+        return dialect.type_descriptor(String(36))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Base
+# ──────────────────────────────────────────────────────────────────────
+
+
+class Base(DeclarativeBase):
+    """Declarative base for all ORM models."""
+    pass
+
+
+# ──────────────────────────────────────────────────────────────────────
+# AnalysisSession
+# ──────────────────────────────────────────────────────────────────────
+
+
+class AnalysisSession(Base):
+    """Represents a single paper analysis session.
+
+    Tracks the paper metadata, current processing status, Gemini usage,
+    and classification results across the full pipeline.
+    """
+
+    __tablename__ = "analysis_sessions"
+
+    id: Mapped[str] = mapped_column(
+        UUIDType,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # Paper metadata
+    paper_title: Mapped[str] = mapped_column(String(500))
+    paper_authors: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    source_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    file_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+
+    # AI results
+    primary_domain: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True
+    )
+    paper_summary: Mapped[Optional[str]] = mapped_column(
+        String(2000), nullable=True
+    )
+    top_ipc_codes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    search_keywords: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    # Processing status
+    status: Mapped[str] = mapped_column(String(30), default="parsing")
+    total_requests_used: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    claims: Mapped[List["ExtractedClaim"]] = relationship(
+        back_populates="session",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+    def to_dict(self) -> dict:
+        """Serialize to a plain dict for MCP responses."""
+        return {
+            "id": self.id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "paper_title": self.paper_title,
+            "paper_authors": self.paper_authors,
+            "source_url": self.source_url,
+            "file_hash": self.file_hash,
+            "primary_domain": self.primary_domain,
+            "paper_summary": self.paper_summary,
+            "top_ipc_codes": self.top_ipc_codes,
+            "search_keywords": self.search_keywords,
+            "status": self.status,
+            "total_requests_used": self.total_requests_used,
+            "error_message": self.error_message,
+        }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# ExtractedClaim
+# ──────────────────────────────────────────────────────────────────────
+
+
+class ExtractedClaim(Base):
+    """A patent claim extracted from a paper, either by heuristic or AI."""
+
+    __tablename__ = "extracted_claims"
+
+    id: Mapped[str] = mapped_column(
+        UUIDType,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    session_id: Mapped[str] = mapped_column(
+        UUIDType,
+        ForeignKey("analysis_sessions.id", ondelete="CASCADE"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    # Claim content
+    claim_text: Mapped[str] = mapped_column(Text)
+    claim_type: Mapped[str] = mapped_column(String(20))
+    technical_domain: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True
+    )
+    novelty_basis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_section: Mapped[str] = mapped_column(String(200))
+    confidence: Mapped[float] = mapped_column(Float)
+
+    # IPC classification (populated by classify_ipc tool)
+    primary_ipc: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    secondary_ipc: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    cpc_code: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    ipc_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    is_valid_ipc: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+    # Source tracking
+    extraction_source: Mapped[str] = mapped_column(String(20))  # "heuristic" or "ai"
+
+    # Relationships
+    session: Mapped["AnalysisSession"] = relationship(back_populates="claims")
+
+    def to_dict(self) -> dict:
+        """Serialize to a plain dict for MCP responses."""
+        return {
+            "id": self.id,
+            "claim_text": self.claim_text,
+            "claim_type": self.claim_type,
+            "technical_domain": self.technical_domain,
+            "novelty_basis": self.novelty_basis,
+            "source_section": self.source_section,
+            "confidence": self.confidence,
+            "primary_ipc": self.primary_ipc,
+            "secondary_ipc": self.secondary_ipc,
+            "cpc_code": self.cpc_code,
+            "ipc_confidence": self.ipc_confidence,
+            "is_valid_ipc": self.is_valid_ipc,
+            "extraction_source": self.extraction_source,
+        }

@@ -89,6 +89,10 @@ class ParsedPaper(BaseModel):
         default=None,
         description="SHA-256 hex digest of the source PDF for deduplication.",
     )
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Database session ID, set when the paper is persisted.",
+    )
     parsed_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp of when the paper was parsed.",
