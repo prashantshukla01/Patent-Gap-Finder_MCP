@@ -1,6 +1,6 @@
 [project]
 name = "patent-gap-finder"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server that analyzes research papers to discover patentable white-space opportunities"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,10 @@ dependencies = [
     "alembic>=1.13",
     "google-api-core>=2.19",
     "greenlet>=3.0",
+    # Phase 3
+    "redis>=5.0",
+    "celery>=5.3",
+    "psycopg2-binary>=2.9",
 ]
 
 [project.optional-dependencies]

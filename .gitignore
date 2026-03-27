@@ -130,3 +130,5 @@ patent_gap_finder.db
 # OS
 .DS_Store
 Thumbs.db
+.AppleDouble/
+*~ 

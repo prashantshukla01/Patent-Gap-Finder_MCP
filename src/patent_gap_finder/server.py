@@ -25,6 +25,8 @@ from fastmcp import FastMCP
 from patent_gap_finder.tools.parse_paper import parse_paper as _parse_paper_impl
 from patent_gap_finder.tools.classify_ipc import classify_ipc as _classify_ipc_impl
 from patent_gap_finder.tools.get_session import get_session as _get_session_impl
+from patent_gap_finder.tools.search_prior_art import search_prior_art as _search_prior_art_impl
+from patent_gap_finder.tools.get_search_status import get_search_status as _get_search_status_impl
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -42,19 +44,38 @@ logger = logging.getLogger("patent_gap_finder")
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Lifespan — DB init / shutdown
+# Lifespan — DB + Redis init / shutdown
 # ──────────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(server):
-    """Server lifespan handler — initializes and tears down the database."""
+    """Server lifespan handler — initializes and tears down DB + Redis."""
+    # Database
     try:
-        from patent_gap_finder.db.connection import init_db, close_db
+        from patent_gap_finder.db.connection import init_db
         await init_db()
         logger.info("Database initialized")
     except Exception as e:
         logger.warning("Database init skipped (not configured): %s", e)
+
+    # Redis
+    try:
+        from patent_gap_finder.cache.redis_client import get_redis_client
+        redis = get_redis_client()
+        stats = await redis.get_cache_stats()
+        logger.info("Redis connected: %s", stats)
+    except Exception as e:
+        logger.warning("Redis init skipped: %s", e)
+
     yield
+
+    # Shutdown
+    try:
+        from patent_gap_finder.cache.redis_client import get_redis_client
+        redis = get_redis_client()
+        await redis.close()
+    except Exception:
+        pass
     try:
         from patent_gap_finder.db.connection import close_db
         await close_db()
@@ -74,7 +95,9 @@ mcp = FastMCP(
         "Workflow:\n"
         "1. parse_paper(source, extract_with_ai=true) — parse and extract claims\n"
         "2. classify_ipc(session_id) — classify claims into IPC/CPC codes\n"
-        "3. get_session(session_id) — retrieve full analysis results"
+        "3. search_prior_art(session_id) — search USPTO + EPO for prior art\n"
+        "4. get_search_status(job_id) — poll search progress\n"
+        "5. get_session(session_id) — retrieve full analysis results"
     ),
     lifespan=lifespan,
 )
@@ -95,19 +118,12 @@ async def parse_paper(source: str, extract_with_ai: bool = False) -> dict:
     When extract_with_ai=True, uses Google Gemini to extract high-quality
     patent-style claims and creates a database session for tracking.
 
-    Supported input formats:
-      - Local PDF: "/path/to/paper.pdf"
-      - arXiv ID: "2301.07041"
-      - arXiv URL: "https://arxiv.org/abs/2301.07041"
-
     Args:
         source: Path to a PDF file or an arXiv ID/URL.
-        extract_with_ai: If True, use Gemini AI for claim extraction
-            (requires GEMINI_API_KEY). Default: False.
+        extract_with_ai: If True, use Gemini AI for claim extraction.
 
     Returns:
         Parsed paper data with session_id if persisted.
-        On error: structured error dict.
     """
     return await _parse_paper_impl(source, extract_with_ai=extract_with_ai)
 
@@ -119,17 +135,50 @@ async def classify_ipc(session_id: str) -> dict:
     Requires a session with AI-extracted claims (run parse_paper with
     extract_with_ai=true first).
 
-    Returns IPC/CPC mappings for each claim, top codes across all claims,
-    and search keywords for patent database queries.
-
     Args:
         session_id: UUID of an analysis session from parse_paper.
 
     Returns:
         IPC classification results with mappings, top codes, and keywords.
-        On error: structured error dict.
     """
     return await _classify_ipc_impl(session_id)
+
+
+@mcp.tool()
+async def search_prior_art(session_id: str) -> dict:
+    """Search USPTO, EPO, and Google Patents for prior art.
+
+    Requires Phase 2 completion (classify_ipc). Dispatches an async search
+    job and returns immediately with a job_id for polling.
+
+    Searches:
+    - USPTO PatentsView (primary, free)
+    - EPO Open Patent Services (requires EPO_CONSUMER_KEY)
+    - Google Patents via SerpAPI (fallback, if USPTO+EPO < 30 results)
+
+    Args:
+        session_id: UUID of the analysis session.
+
+    Returns:
+        Job dispatch confirmation with job_id for polling.
+    """
+    return await _search_prior_art_impl(session_id)
+
+
+@mcp.tool()
+async def get_search_status(job_id: str) -> dict:
+    """Poll the status of a patent search job.
+
+    Returns progress data including patent counts per source,
+    cache hits, deduplication stats, and next step guidance.
+
+    Args:
+        job_id: UUID of the search job from search_prior_art.
+
+    Returns:
+        Structured status with progress and completion info.
+    """
+    return await _get_search_status_impl(job_id)
 
 
 @mcp.tool()
@@ -137,15 +186,13 @@ async def get_session(session_id: str) -> dict:
     """Retrieve a past analysis session with all results.
 
     Returns the full session data including paper metadata, extracted
-    claims (both heuristic and AI), IPC classifications, and processing
-    status.
+    claims, IPC classifications, patent search results, and status.
 
     Args:
         session_id: UUID of the analysis session.
 
     Returns:
         Complete session data with claims and status.
-        On error: structured error dict.
     """
     return await _get_session_impl(session_id)
 
@@ -159,15 +206,17 @@ def health_check() -> dict:
     """Server health check — returns status and version information."""
     return {
         "status": "healthy",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "server": "patent-gap-finder",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "tools_available": [
             "parse_paper",
             "classify_ipc",
+            "search_prior_art",
+            "get_search_status",
             "get_session",
         ],
-        "phase": 2,
+        "phase": 3,
     }
 
 
@@ -194,11 +243,7 @@ def usage_stats() -> dict:
 
 @mcp.resource("patent://quota-status")
 def quota_status() -> dict:
-    """Estimated remaining daily Gemini free-tier quota.
-
-    The free tier allows 1,500 requests per day. This resource tracks
-    usage from the current server session (resets on restart).
-    """
+    """Estimated remaining daily Gemini free-tier quota."""
     daily_limit = 1500
     try:
         from patent_gap_finder.ai.gemini_client import get_gemini_client
@@ -208,10 +253,6 @@ def quota_status() -> dict:
             "daily_limit": daily_limit,
             "used_this_session": used,
             "estimated_remaining": max(0, daily_limit - used),
-            "note": (
-                "This tracks the current server session only. "
-                "Actual quota resets daily at Google's discretion."
-            ),
         }
     except Exception:
         return {
@@ -222,23 +263,29 @@ def quota_status() -> dict:
         }
 
 
+@mcp.resource("patent://cache-stats")
+async def cache_stats() -> dict:
+    """Redis cache statistics."""
+    try:
+        from patent_gap_finder.cache.redis_client import get_redis_client
+        redis = get_redis_client()
+        return await redis.get_cache_stats()
+    except Exception:
+        return {"status": "unavailable"}
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Entrypoint
 # ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    """Run the MCP server.
-
-    Transport is determined by the ``MCP_TRANSPORT`` environment variable:
-      - ``stdio`` (default): for Claude Desktop integration
-      - ``streamable-http``: for web client integration
-    """
+    """Run the MCP server."""
     transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "8000"))
 
     logger.info(
-        "Starting Patent Gap Finder MCP server v0.2.0 (transport=%s)", transport
+        "Starting Patent Gap Finder MCP server v0.3.0 (transport=%s)", transport
     )
 
     if transport == "streamable-http":
