@@ -4,7 +4,6 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-2.0-purple.svg)](https://github.com/jlowin/fastmcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Free APIs](https://img.shields.io/badge/APIs-Free%20Tier-orange.svg)](#api-keys)
 
 ---
@@ -637,12 +636,6 @@ test:     test additions or changes
 chore:    build, tooling, dependencies
 docs:     documentation only
 ```
-
----
-
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
