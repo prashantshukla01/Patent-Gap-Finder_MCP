@@ -46,16 +46,16 @@ Researchers and startup CTOs routinely build patentable innovations without real
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         MCP Clients                                  │
-│              Claude Desktop (SSE)  ·  Web UI (HTTP)                  │
+│                         MCP Clients                                 │
+│              Claude Desktop (SSE)  ·  Web UI (HTTP)                 │
 └────────────────────────────┬────────────────────────────────────────┘
                              │  MCP Protocol
 ┌────────────────────────────▼────────────────────────────────────────┐
-│                      FastMCP Server (Python)                         │
-│   parse_paper · classify_ipc · search_prior_art · map_landscape      │
-│             find_whitespace · draft_claims · get_session             │
-└──────┬──────────────┬────────────────┬──────────────────┬───────────┘
-       │              │                │                  │
+│                      FastMCP Server (Python)                        │
+│   parse_paper · classify_ipc · search_prior_art · map_landscape     │
+│             find_whitespace · draft_claims · get_session            │
+└──────┬──────────────┬───────────────┬─────────────────┬─────────────┘
+       │              │               │                 │
 ┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐  ┌───────▼────────┐
 │  AI / NLP   │ │  External  │ │   Storage   │  │   Async Jobs   │
 │             │ │  Patent    │ │             │  │                │
