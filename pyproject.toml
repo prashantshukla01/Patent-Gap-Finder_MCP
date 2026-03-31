@@ -1,6 +1,6 @@
 [project]
 name = "patent-gap-finder"
-version = "0.4.0"
+version = "1.0.0"
 description = "MCP server that analyzes research papers to discover patentable white-space opportunities"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,6 +33,10 @@ dependencies = [
     "qdrant-client>=1.9",
     "numpy>=1.26",
     "scipy>=1.13",
+    # Phase 5
+    "reportlab>=4.0",
+    "starlette>=0.37",
+    "uvicorn>=0.29",
 ]
 
 [project.optional-dependencies]
