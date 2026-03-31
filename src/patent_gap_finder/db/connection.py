@@ -1,8 +1,8 @@
 """Async SQLAlchemy engine and session factory.
 
 Supports PostgreSQL (asyncpg) for production and SQLite (aiosqlite)
-for testing.  The ``init_db()`` function creates all tables and is
-called during the FastMCP server lifespan.
+for testing.  The ``init_db()`` function runs Alembic migrations for
+PostgreSQL and falls back to ``create_all`` for SQLite test databases.
 """
 
 from __future__ import annotations
@@ -89,17 +89,48 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all database tables.
+    """Initialize the database schema.
+
+    For PostgreSQL: runs Alembic migrations (``alembic upgrade head``).
+    For SQLite (tests): falls back to ``create_all`` since Alembic
+    does not support SQLite JSON columns correctly.
 
     Called during FastMCP server startup via the lifespan handler.
-    Safe to call multiple times — uses ``CREATE TABLE IF NOT EXISTS``.
+    Safe to call multiple times.
     """
-    from patent_gap_finder.db.models import Base
+    import os
 
-    engine = _get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables created/verified")
+    url = os.environ.get("DATABASE_URL", "")
+
+    if "postgresql" in url:
+        # Use Alembic migrations for production PostgreSQL
+        try:
+            import asyncio
+            from alembic.config import Config
+            from alembic import command
+
+            alembic_cfg = Config("alembic.ini")
+            # Override URL from environment
+            alembic_cfg.set_main_option(
+                "sqlalchemy.url",
+                url.replace("+asyncpg", "+psycopg2"),
+            )
+            await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+            logger.info("Alembic migrations applied successfully")
+        except Exception as e:
+            logger.warning("Alembic migration failed, falling back to create_all: %s", e)
+            from patent_gap_finder.db.models import Base
+            engine = _get_engine()
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables created via create_all fallback")
+    else:
+        # SQLite or other — use create_all directly
+        from patent_gap_finder.db.models import Base
+        engine = _get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created/verified (non-PostgreSQL)")
 
 
 async def close_db() -> None:

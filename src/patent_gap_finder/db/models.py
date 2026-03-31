@@ -11,6 +11,7 @@ Models:
 - LandscapeJob: Phase 4 embedding/clustering job
 - ClusterRecord: HDBSCAN cluster metadata
 - WhitespaceOpportunityRecord: detected patent gaps
+- DraftedClaimRecord: Phase 5 USPTO claim drafts
 - session_patents: many-to-many association
 """
 
@@ -165,6 +166,11 @@ class AnalysisSession(Base):
         Integer, nullable=True
     )
 
+    # Phase 5: claim drafting tracking
+    claims_drafted: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )
+
     # Relationships
     claims: Mapped[List["ExtractedClaim"]] = relationship(
         back_populates="session",
@@ -181,6 +187,11 @@ class AnalysisSession(Base):
         lazy="selectin",
     )
     landscape_jobs: Mapped[List["LandscapeJob"]] = relationship(
+        back_populates="session",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    drafted_claims: Mapped[List["DraftedClaimRecord"]] = relationship(
         back_populates="session",
         lazy="selectin",
         cascade="all, delete-orphan",
@@ -208,6 +219,7 @@ class AnalysisSession(Base):
             "landscape_complete": self.landscape_complete,
             "whitespace_analysis_complete": self.whitespace_analysis_complete,
             "top_opportunity_count": self.top_opportunity_count,
+            "claims_drafted": self.claims_drafted,
         }
 
 
@@ -531,3 +543,49 @@ class WhitespaceOpportunityRecord(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# DraftedClaimRecord (Phase 5)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class DraftedClaimRecord(Base):
+    """Persisted USPTO-format patent claim draft."""
+
+    __tablename__ = "drafted_claims"
+
+    id: Mapped[str] = mapped_column(
+        UUIDType,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    session_id: Mapped[str] = mapped_column(
+        UUIDType,
+        ForeignKey("analysis_sessions.id", ondelete="CASCADE"),
+    )
+    opportunity_id: Mapped[str] = mapped_column(
+        UUIDType,
+        ForeignKey("whitespace_opportunities.id", ondelete="CASCADE"),
+    )
+
+    claim_number: Mapped[int] = mapped_column(Integer)
+    claim_text: Mapped[str] = mapped_column(Text)
+    claim_type: Mapped[str] = mapped_column(String(20))  # independent / dependent
+    depends_on: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    patent_claim_category: Mapped[str] = mapped_column(
+        String(20), default="method"
+    )  # method / system / composition
+
+    # Drafting metadata (denormalized from ClaimSet for convenience)
+    drafting_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    distinguishing_features: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    ipc_codes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    session: Mapped["AnalysisSession"] = relationship(back_populates="drafted_claims")
