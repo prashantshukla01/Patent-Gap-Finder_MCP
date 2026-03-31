@@ -54,9 +54,15 @@ Researchers and startup CTOs routinely build patentable innovations without real
 │                      FastMCP Server (Python)                        │
 │   parse_paper · classify_ipc · search_prior_art · map_landscape     │
 │             find_whitespace · draft_claims · get_session            │
+<<<<<<< Updated upstream
 └──────┬──────────────┬───────────────┬─────────────────┬─────────────┘
        │              │               │                 │
 ┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐  ┌───────▼────────┐
+=======
+└──────┬──────────────┬───────────────┬──────────────────┬────────────┘
+       │              │               │                  │
+┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐  ┌────────▼───────┐
+>>>>>>> Stashed changes
 │  AI / NLP   │ │  External  │ │   Storage   │  │   Async Jobs   │
 │             │ │  Patent    │ │             │  │                │
 │ Gemini 1.5  │ │    APIs    │ │  PostgreSQL │  │ Celery + Redis │
