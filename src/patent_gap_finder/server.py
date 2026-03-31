@@ -3,6 +3,13 @@
 Registers all MCP tools and resources.  Supports both stdio transport
 (for Claude Desktop) and streamable-http transport (for web clients).
 
+Phase 5 additions:
+- draft_claims and export_report tools (9 total)
+- Structured JSON logging
+- Health check with dependency verification
+- API key authentication middleware (HTTP transport)
+- Per-IP rate limiting via Redis (HTTP transport)
+
 Usage:
     # stdio transport (Claude Desktop)
     uv run python -m patent_gap_finder.server
@@ -13,6 +20,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -21,6 +29,9 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from starlette.middleware import Middleware as StarletteMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse as StarletteJSONResponse
 
 from patent_gap_finder.tools.parse_paper import parse_paper as _parse_paper_impl
 from patent_gap_finder.tools.classify_ipc import classify_ipc as _classify_ipc_impl
@@ -29,19 +40,53 @@ from patent_gap_finder.tools.search_prior_art import search_prior_art as _search
 from patent_gap_finder.tools.get_search_status import get_search_status as _get_search_status_impl
 from patent_gap_finder.tools.map_landscape import map_landscape as _map_landscape_impl
 from patent_gap_finder.tools.find_whitespace import find_whitespace as _find_whitespace_impl
+from patent_gap_finder.tools.draft_claims import draft_claims as _draft_claims_impl
+from patent_gap_finder.tools.export_report import export_report as _export_report_impl
 
 # Load environment variables from .env if present
 load_dotenv()
 
 # ──────────────────────────────────────────────────────────────────────
-# Logging configuration
+# Structured JSON logging
 # ──────────────────────────────────────────────────────────────────────
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    stream=sys.stderr,  # MCP uses stdout for protocol messages
-)
+
+class JSONFormatter(logging.Formatter):
+    """Structured JSON log formatter for production deployments."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return json.dumps({
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "module": record.module,
+            "message": record.getMessage(),
+            "session_id": getattr(record, "session_id", None),
+        })
+
+
+def _configure_logging() -> None:
+    """Set up logging based on environment configuration."""
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
+
+    if transport == "streamable-http":
+        # Use structured JSON logging for HTTP transport (production)
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(JSONFormatter())
+    else:
+        # Use human-readable logging for stdio transport (development)
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+        )
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(getattr(logging, log_level, logging.INFO))
+
+
+_configure_logging()
 logger = logging.getLogger("patent_gap_finder")
 
 
@@ -117,7 +162,9 @@ mcp = FastMCP(
         "4. get_search_status(job_id) — poll search progress\n"
         "5. map_landscape(session_id) — embed patents and cluster landscape\n"
         "6. find_whitespace(session_id) — detect patentable gaps\n"
-        "7. get_session(session_id) — retrieve full analysis results"
+        "7. draft_claims(session_id) — generate USPTO patent claims\n"
+        "8. export_report(session_id) — download PDF analysis report\n"
+        "9. get_session(session_id) — retrieve full analysis results"
     ),
     lifespan=lifespan,
 )
@@ -231,6 +278,44 @@ async def find_whitespace(
 
 
 @mcp.tool()
+async def draft_claims(
+    session_id: str,
+    min_novelty_score: float = 0.5,
+) -> dict:
+    """Generate USPTO-format patent claims for whitespace opportunities.
+
+    Requires Phase 4 completion (find_whitespace). Uses Gemini AI to draft
+    properly structured independent and dependent claims following USPTO
+    formatting rules.
+
+    Args:
+        session_id: UUID of the analysis session.
+        min_novelty_score: Minimum novelty score for claim drafting (0.0-1.0).
+
+    Returns:
+        Claim sets with formatted claims, rationale, and filing order.
+    """
+    return await _draft_claims_impl(session_id, min_novelty_score=min_novelty_score)
+
+
+@mcp.tool()
+async def export_report(session_id: str) -> dict:
+    """Generate and download a PDF patent gap analysis report.
+
+    Produces a structured, attorney-ready PDF with cover page, executive
+    summary, patent landscape overview, whitespace opportunities, drafted
+    claims, and methodology sections.
+
+    Args:
+        session_id: UUID of the analysis session.
+
+    Returns:
+        Report metadata with base64-encoded PDF content.
+    """
+    return await _export_report_impl(session_id)
+
+
+@mcp.tool()
 async def get_session(session_id: str) -> dict:
     """Retrieve a past analysis session with all results.
 
@@ -250,25 +335,77 @@ async def get_session(session_id: str) -> dict:
 # Resources
 # ──────────────────────────────────────────────────────────────────────
 
-@mcp.resource("patent://health")
-def health_check() -> dict:
-    """Server health check — returns status and version information."""
+async def _run_health_checks() -> dict:
+    """Shared health check logic used by both MCP resource and HTTP route."""
+    checks: dict[str, str] = {}
+
+    # PostgreSQL
+    try:
+        from patent_gap_finder.db.connection import get_db_session
+        from sqlalchemy import text
+
+        async with get_db_session() as db:
+            await db.execute(text("SELECT 1"))
+        checks["postgres"] = "ok"
+    except Exception as e:
+        checks["postgres"] = f"error: {str(e)}"
+
+    # Redis
+    try:
+        from patent_gap_finder.cache.redis_client import get_redis_client
+        redis = get_redis_client()
+        conn = await redis._get_connection()
+        if conn:
+            await conn.ping()
+            checks["redis"] = "ok"
+        else:
+            checks["redis"] = "unavailable"
+    except Exception as e:
+        checks["redis"] = f"error: {str(e)}"
+
+    # Qdrant
+    try:
+        from patent_gap_finder.embeddings.qdrant_store import get_collection_stats
+        await get_collection_stats()
+        checks["qdrant"] = "ok"
+    except Exception as e:
+        checks["qdrant"] = f"error: {str(e)}"
+
+    # Embedding model
+    try:
+        from patent_gap_finder.embeddings.embedding_engine import get_embedding_model
+        get_embedding_model()
+        checks["embedding_model"] = "ok"
+    except Exception as e:
+        checks["embedding_model"] = f"error: {str(e)}"
+
+    all_ok = all(v == "ok" for v in checks.values())
     return {
-        "status": "healthy",
-        "version": "0.4.0",
-        "server": "patent-gap-finder",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "healthy" if all_ok else "degraded",
+        "checks": checks,
+        "version": "1.0.0",
         "tools_available": [
-            "parse_paper",
-            "classify_ipc",
-            "search_prior_art",
-            "get_search_status",
-            "map_landscape",
-            "find_whitespace",
-            "get_session",
+            "parse_paper", "classify_ipc", "search_prior_art",
+            "get_search_status", "map_landscape", "find_whitespace",
+            "draft_claims", "export_report", "get_session",
         ],
-        "phase": 4,
+        "phase": 5,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@mcp.resource("patent://health")
+async def health_check() -> dict:
+    """Server health check with dependency verification (MCP resource)."""
+    return await _run_health_checks()
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_http_endpoint(request: Request) -> StarletteJSONResponse:
+    """Standalone HTTP health endpoint for Docker/Railway health checks."""
+    result = await _run_health_checks()
+    status_code = 200 if result["status"] == "healthy" else 503
+    return StarletteJSONResponse(result, status_code=status_code)
 
 
 @mcp.resource("patent://usage")
@@ -336,6 +473,34 @@ async def qdrant_stats() -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Middleware wiring (HTTP transport only)
+# ──────────────────────────────────────────────────────────────────────
+
+def _get_middleware() -> list[StarletteMiddleware]:
+    """Build the middleware stack for HTTP transport."""
+    from patent_gap_finder.middleware.auth import APIKeyMiddleware
+    from patent_gap_finder.middleware.rate_limiter import RateLimitMiddleware
+
+    middlewares: list[StarletteMiddleware] = []
+
+    # Rate limiting (outermost — runs first, before auth)
+    middlewares.append(StarletteMiddleware(RateLimitMiddleware))
+
+    # API key authentication
+    api_key = os.getenv("MCP_API_KEY")
+    if api_key:
+        middlewares.append(StarletteMiddleware(APIKeyMiddleware, api_key=api_key))
+        logger.info("API key authentication enabled")
+    else:
+        logger.warning(
+            "MCP_API_KEY not set — HTTP transport has NO authentication. "
+            "Set MCP_API_KEY for production deployments."
+        )
+
+    return middlewares
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Entrypoint
 # ──────────────────────────────────────────────────────────────────────
 
@@ -346,11 +511,22 @@ def main() -> None:
     port = int(os.getenv("MCP_PORT", "8000"))
 
     logger.info(
-        "Starting Patent Gap Finder MCP server v0.4.0 (transport=%s)", transport
+        "Starting Patent Gap Finder MCP server v1.0.0 (transport=%s)", transport
     )
 
     if transport == "streamable-http":
-        mcp.run(transport="streamable-http", host=host, port=port)
+        import uvicorn
+
+        middlewares = _get_middleware()
+        app = mcp.http_app(
+            transport="streamable-http",
+            middleware=middlewares,
+        )
+        logger.info(
+            "HTTP server starting on %s:%d with %d middleware(s)",
+            host, port, len(middlewares),
+        )
+        uvicorn.run(app, host=host, port=port, log_level="info")
     else:
         mcp.run(transport="stdio")
 
