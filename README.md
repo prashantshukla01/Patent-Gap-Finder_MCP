@@ -615,7 +615,7 @@ Designed to run entirely on free tiers. Here is the daily budget at scale:
 ---
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE.md%20) for details.
 
 ---
 
