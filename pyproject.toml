@@ -1,6 +1,6 @@
 [project]
 name = "patent-gap-finder"
-version = "0.3.0"
+version = "0.4.0"
 description = "MCP server that analyzes research papers to discover patentable white-space opportunities"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,13 @@ dependencies = [
     "redis>=5.0",
     "celery>=5.3",
     "psycopg2-binary>=2.9",
+    # Phase 4
+    "sentence-transformers>=3.0",
+    "torch>=2.0",
+    "hdbscan>=0.8.33",
+    "qdrant-client>=1.9",
+    "numpy>=1.26",
+    "scipy>=1.13",
 ]
 
 [project.optional-dependencies]
