@@ -6,8 +6,11 @@ generated server-side (or in Python for SQLite compatibility).
 Models:
 - AnalysisSession: paper analysis tracking
 - ExtractedClaim: patent claims from papers
-- Patent: prior art patents from search
+- PatentRecord: prior art patents from search
 - SearchJob: async search job tracking
+- LandscapeJob: Phase 4 embedding/clustering job
+- ClusterRecord: HDBSCAN cluster metadata
+- WhitespaceOpportunityRecord: detected patent gaps
 - session_patents: many-to-many association
 """
 
@@ -100,7 +103,7 @@ class AnalysisSession(Base):
     """Represents a single paper analysis session.
 
     Tracks the paper metadata, current processing status, Gemini usage,
-    classification results, and patent search state.
+    classification results, patent search state, and Phase 4 analysis.
     """
 
     __tablename__ = "analysis_sessions"
@@ -151,6 +154,17 @@ class AnalysisSession(Base):
         Integer, nullable=True
     )
 
+    # Phase 4: landscape & white-space tracking
+    landscape_complete: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )
+    whitespace_analysis_complete: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )
+    top_opportunity_count: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+
     # Relationships
     claims: Mapped[List["ExtractedClaim"]] = relationship(
         back_populates="session",
@@ -165,6 +179,11 @@ class AnalysisSession(Base):
     patents: Mapped[List["PatentRecord"]] = relationship(
         secondary=session_patents,
         lazy="selectin",
+    )
+    landscape_jobs: Mapped[List["LandscapeJob"]] = relationship(
+        back_populates="session",
+        lazy="selectin",
+        cascade="all, delete-orphan",
     )
 
     def to_dict(self) -> dict:
@@ -186,6 +205,9 @@ class AnalysisSession(Base):
             "error_message": self.error_message,
             "patent_search_complete": self.patent_search_complete,
             "total_patents_found": self.total_patents_found,
+            "landscape_complete": self.landscape_complete,
+            "whitespace_analysis_complete": self.whitespace_analysis_complete,
+            "top_opportunity_count": self.top_opportunity_count,
         }
 
 
@@ -301,6 +323,12 @@ class PatentRecord(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
+    # Phase 4: cluster assignment
+    cluster_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cluster_label: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True
+    )
+
 
 # ──────────────────────────────────────────────────────────────────────
 # SearchJob
@@ -354,3 +382,152 @@ class SearchJob(Base):
 
     # Relationships
     session: Mapped["AnalysisSession"] = relationship(back_populates="search_jobs")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# LandscapeJob (Phase 4)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class LandscapeJob(Base):
+    """Tracks a landscape mapping job (embed + cluster + label)."""
+
+    __tablename__ = "landscape_jobs"
+
+    id: Mapped[str] = mapped_column(
+        UUIDType,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    session_id: Mapped[str] = mapped_column(
+        UUIDType,
+        ForeignKey("analysis_sessions.id", ondelete="CASCADE"),
+    )
+
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    n_patents_embedded: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    n_clusters: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    noise_patent_count: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    hdbscan_params: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    embedding_model: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+    whitespace_opportunities_found: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships
+    session: Mapped["AnalysisSession"] = relationship(
+        back_populates="landscape_jobs"
+    )
+    cluster_records: Mapped[List["ClusterRecord"]] = relationship(
+        back_populates="landscape_job",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# ClusterRecord (Phase 4)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class ClusterRecord(Base):
+    """Persisted HDBSCAN cluster metadata."""
+
+    __tablename__ = "cluster_records"
+
+    id: Mapped[str] = mapped_column(
+        UUIDType,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    landscape_job_id: Mapped[str] = mapped_column(
+        UUIDType,
+        ForeignKey("landscape_jobs.id", ondelete="CASCADE"),
+    )
+
+    cluster_id: Mapped[int] = mapped_column(Integer)
+    label: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    technical_domain: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True
+    )
+    patent_count: Mapped[int] = mapped_column(Integer)
+    centroid_patent_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    avg_internal_similarity: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
+    is_noise_cluster: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Relationships
+    landscape_job: Mapped["LandscapeJob"] = relationship(
+        back_populates="cluster_records"
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# WhitespaceOpportunityRecord (Phase 4)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class WhitespaceOpportunityRecord(Base):
+    """Persisted white-space opportunity."""
+
+    __tablename__ = "whitespace_opportunities"
+
+    id: Mapped[str] = mapped_column(
+        UUIDType,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    session_id: Mapped[str] = mapped_column(
+        UUIDType,
+        ForeignKey("analysis_sessions.id", ondelete="CASCADE"),
+    )
+    landscape_job_id: Mapped[str] = mapped_column(
+        UUIDType,
+        ForeignKey("landscape_jobs.id", ondelete="CASCADE"),
+    )
+    claim_id: Mapped[Optional[str]] = mapped_column(
+        UUIDType,
+        ForeignKey("extracted_claims.id"),
+        nullable=True,
+    )
+
+    claim_text: Mapped[str] = mapped_column(Text)
+    claim_type: Mapped[str] = mapped_column(String(20))
+    novelty_score: Mapped[float] = mapped_column(Float)
+    avg_neighbor_similarity: Mapped[float] = mapped_column(Float)
+    nearest_cluster_label: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True
+    )
+    nearest_cluster_distance: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
+    nearest_patent_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    nearest_patent_titles: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    gemini_assessment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gemini_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    recommended_claim_scope: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True
+    )
+    ipc_whitespace_codes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    is_whitespace: Mapped[bool] = mapped_column(Boolean)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import insert, select, text
+from sqlalchemy import insert, select, String, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from patent_gap_finder.db.models import PatentRecord, session_patents
@@ -151,6 +151,54 @@ async def search_patents_by_ipc(
     result = await db.execute(
         select(PatentRecord).where(
             PatentRecord.ipc_codes.cast(String).contains(ipc_prefix)
+        )
+    )
+    return list(result.scalars().all())
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 4: Embedding metadata updates
+# ──────────────────────────────────────────────────────────────────────
+
+
+async def update_patent_embedding_metadata(
+    db: AsyncSession,
+    patent_db_id: str,
+    abstract_similarity: float,
+    cluster_id: int,
+    cluster_label: Optional[str] = None,
+) -> None:
+    """Update a patent with embedding metadata (Phase 4).
+
+    Populates abstract_similarity (was NULL from Phase 3),
+    cluster_id, and cluster_label.
+    """
+    await db.execute(
+        update(PatentRecord)
+        .where(PatentRecord.id == patent_db_id)
+        .values(
+            abstract_similarity=abstract_similarity,
+            cluster_id=cluster_id,
+            cluster_label=cluster_label,
+        )
+    )
+    await db.flush()
+
+
+async def get_unembedded_patents(
+    db: AsyncSession,
+    session_id: str,
+) -> list[PatentRecord]:
+    """Return patents where abstract_similarity IS NULL for a session.
+
+    Used to avoid re-embedding on subsequent map_landscape calls.
+    """
+    result = await db.execute(
+        select(PatentRecord)
+        .join(session_patents)
+        .where(
+            session_patents.c.session_id == session_id,
+            PatentRecord.abstract_similarity.is_(None),
         )
     )
     return list(result.scalars().all())
