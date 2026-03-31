@@ -27,6 +27,8 @@ from patent_gap_finder.tools.classify_ipc import classify_ipc as _classify_ipc_i
 from patent_gap_finder.tools.get_session import get_session as _get_session_impl
 from patent_gap_finder.tools.search_prior_art import search_prior_art as _search_prior_art_impl
 from patent_gap_finder.tools.get_search_status import get_search_status as _get_search_status_impl
+from patent_gap_finder.tools.map_landscape import map_landscape as _map_landscape_impl
+from patent_gap_finder.tools.find_whitespace import find_whitespace as _find_whitespace_impl
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -44,12 +46,12 @@ logger = logging.getLogger("patent_gap_finder")
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Lifespan — DB + Redis init / shutdown
+# Lifespan — DB + Redis + Qdrant + Embedding model init / shutdown
 # ──────────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(server):
-    """Server lifespan handler — initializes and tears down DB + Redis."""
+    """Server lifespan handler — initializes and tears down services."""
     # Database
     try:
         from patent_gap_finder.db.connection import init_db
@@ -66,6 +68,22 @@ async def lifespan(server):
         logger.info("Redis connected: %s", stats)
     except Exception as e:
         logger.warning("Redis init skipped: %s", e)
+
+    # Qdrant
+    try:
+        from patent_gap_finder.embeddings.qdrant_store import ensure_collection_exists
+        await ensure_collection_exists()
+        logger.info("Qdrant collection ready")
+    except Exception as e:
+        logger.warning("Qdrant init skipped: %s", e)
+
+    # Embedding model warmup
+    try:
+        from patent_gap_finder.embeddings.embedding_engine import get_embedding_model
+        get_embedding_model()
+        logger.info("Embedding model loaded")
+    except Exception as e:
+        logger.warning("Embedding model warmup skipped: %s", e)
 
     yield
 
@@ -97,7 +115,9 @@ mcp = FastMCP(
         "2. classify_ipc(session_id) — classify claims into IPC/CPC codes\n"
         "3. search_prior_art(session_id) — search USPTO + EPO for prior art\n"
         "4. get_search_status(job_id) — poll search progress\n"
-        "5. get_session(session_id) — retrieve full analysis results"
+        "5. map_landscape(session_id) — embed patents and cluster landscape\n"
+        "6. find_whitespace(session_id) — detect patentable gaps\n"
+        "7. get_session(session_id) — retrieve full analysis results"
     ),
     lifespan=lifespan,
 )
@@ -151,11 +171,6 @@ async def search_prior_art(session_id: str) -> dict:
     Requires Phase 2 completion (classify_ipc). Dispatches an async search
     job and returns immediately with a job_id for polling.
 
-    Searches:
-    - USPTO PatentsView (primary, free)
-    - EPO Open Patent Services (requires EPO_CONSUMER_KEY)
-    - Google Patents via SerpAPI (fallback, if USPTO+EPO < 30 results)
-
     Args:
         session_id: UUID of the analysis session.
 
@@ -169,9 +184,6 @@ async def search_prior_art(session_id: str) -> dict:
 async def get_search_status(job_id: str) -> dict:
     """Poll the status of a patent search job.
 
-    Returns progress data including patent counts per source,
-    cache hits, deduplication stats, and next step guidance.
-
     Args:
         job_id: UUID of the search job from search_prior_art.
 
@@ -179,6 +191,43 @@ async def get_search_status(job_id: str) -> dict:
         Structured status with progress and completion info.
     """
     return await _get_search_status_impl(job_id)
+
+
+@mcp.tool()
+async def map_landscape(session_id: str) -> dict:
+    """Build a patent landscape map from search results.
+
+    Embeds all patents using sentence-transformers, clusters with HDBSCAN,
+    and labels clusters with Gemini AI. Requires Phase 3 completion.
+
+    Args:
+        session_id: UUID of the analysis session.
+
+    Returns:
+        Landscape map with clusters, patent counts, and cluster labels.
+    """
+    return await _map_landscape_impl(session_id)
+
+
+@mcp.tool()
+async def find_whitespace(
+    session_id: str,
+    min_novelty_score: float = 0.5,
+) -> dict:
+    """Detect patentable white-space opportunities.
+
+    Compares AI-extracted paper claims against the patent landscape to
+    find regions with no dense prior art coverage. Uses Gemini for
+    novelty assessment of genuine candidates.
+
+    Args:
+        session_id: UUID of the analysis session.
+        min_novelty_score: Minimum novelty score threshold (0.0-1.0).
+
+    Returns:
+        White-space report with ranked opportunities and Gemini assessments.
+    """
+    return await _find_whitespace_impl(session_id, min_novelty_score=min_novelty_score)
 
 
 @mcp.tool()
@@ -206,7 +255,7 @@ def health_check() -> dict:
     """Server health check — returns status and version information."""
     return {
         "status": "healthy",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "server": "patent-gap-finder",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "tools_available": [
@@ -214,9 +263,11 @@ def health_check() -> dict:
             "classify_ipc",
             "search_prior_art",
             "get_search_status",
+            "map_landscape",
+            "find_whitespace",
             "get_session",
         ],
-        "phase": 3,
+        "phase": 4,
     }
 
 
@@ -274,6 +325,16 @@ async def cache_stats() -> dict:
         return {"status": "unavailable"}
 
 
+@mcp.resource("patent://qdrant-stats")
+async def qdrant_stats() -> dict:
+    """Qdrant vector store statistics."""
+    try:
+        from patent_gap_finder.embeddings.qdrant_store import get_collection_stats
+        return await get_collection_stats()
+    except Exception:
+        return {"status": "unavailable"}
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Entrypoint
 # ──────────────────────────────────────────────────────────────────────
@@ -285,7 +346,7 @@ def main() -> None:
     port = int(os.getenv("MCP_PORT", "8000"))
 
     logger.info(
-        "Starting Patent Gap Finder MCP server v0.3.0 (transport=%s)", transport
+        "Starting Patent Gap Finder MCP server v0.4.0 (transport=%s)", transport
     )
 
     if transport == "streamable-http":

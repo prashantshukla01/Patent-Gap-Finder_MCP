@@ -27,16 +27,32 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   worker:
     build: .
     command: celery -A patent_gap_finder.workers.celery_app worker --loglevel=info --concurrency=2
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:%40Blackbuck08@postgres:5432/patent_gap_finder
       - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     env_file: .env
 
@@ -49,10 +65,13 @@ services:
       - MCP_TRANSPORT=streamable-http
       - DATABASE_URL=postgresql+asyncpg://postgres:%40Blackbuck08@postgres:5432/patent_gap_finder
       - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
       worker:
         condition: service_started
@@ -60,3 +79,4 @@ services:
 
 volumes:
   pgdata:
+  qdrant_data:
