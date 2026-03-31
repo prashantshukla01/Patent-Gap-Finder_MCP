@@ -4,6 +4,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-2.0-purple.svg)](https://github.com/jlowin/fastmcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Free APIs](https://img.shields.io/badge/APIs-Free%20Tier-orange.svg)](#api-keys)
 
 ---
@@ -54,15 +55,9 @@ Researchers and startup CTOs routinely build patentable innovations without real
 │                      FastMCP Server (Python)                        │
 │   parse_paper · classify_ipc · search_prior_art · map_landscape     │
 │             find_whitespace · draft_claims · get_session            │
-<<<<<<< Updated upstream
-└──────┬──────────────┬───────────────┬─────────────────┬─────────────┘
-       │              │               │                 │
-┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐  ┌───────▼────────┐
-=======
 └──────┬──────────────┬───────────────┬──────────────────┬────────────┘
        │              │               │                  │
 ┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐  ┌────────▼───────┐
->>>>>>> Stashed changes
 │  AI / NLP   │ │  External  │ │   Storage   │  │   Async Jobs   │
 │             │ │  Patent    │ │             │  │                │
 │ Gemini 1.5  │ │    APIs    │ │  PostgreSQL │  │ Celery + Redis │
@@ -616,6 +611,11 @@ Designed to run entirely on free tiers. Here is the daily budget at scale:
 | Redis Cache | Local / Railway free | Reduces API calls by ~60% after warmup | — |
 
 **Practical throughput:** ~400 full analyses per day on the free tier, limited by EPO. USPTO alone supports unlimited analyses. SerpAPI is reserved for edge cases.
+
+---
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
