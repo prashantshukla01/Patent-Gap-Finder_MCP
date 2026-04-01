@@ -1,134 +1,344 @@
-# Environments
-.venv/
+# ══════════════════════════════════════════════════════════════════
+#  Patent Gap Finder — .gitignore
+#  Covers: Python backend, Next.js web UI, Docker, databases,
+#          IDE configs, OS files, secrets, and build artifacts
+# ══════════════════════════════════════════════════════════════════
 
+
+# ── Secrets & Environment Variables ───────────────────────────────
+# NEVER commit these — they contain API keys and credentials
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+.env.development
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+
+# ── Python ────────────────────────────────────────────────────────
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
+*.pyd
 
-# C extensions
-*.so
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# uv
+.uv/
+uv.lock.bak
 
 # Distribution / packaging
-.Python
-build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+build/
 *.egg-info/
-.installed.cfg
 *.egg
 MANIFEST
+.eggs/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.whl
 
 # PyInstaller
 *.manifest
 *.spec
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+coverage/
 htmlcov/
 .tox/
 .nox/
-.coverage
-.coverage.*
-.cache
 nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
+pytest.xml
+*.pytest_tmp
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-.python-version
-
-# celery beat schedule file
-celerybeat-schedule
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
+# Type checking
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Pyre type checker
 .pyre/
+.pytype/
+pyrightconfig.json
 
-# uv lock file
-uv.lock
+# Profiling
+*.prof
+*.lprof
 
-# Test fixtures (downloaded PDFs)
-tests/fixtures/*.pdf
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
 
-# SQLite fallback DB
+# Celery
+celerybeat-schedule
+celerybeat.pid
+celery-*.pid
+
+# Alembic — keep migrations but ignore auto-generated temp files
+# (do NOT ignore versions/ — those are committed)
+alembic_tmp/
+
+# sentence-transformers model cache
+# (downloaded automatically on first run — no need to commit)
+.cache/
+~/.cache/huggingface/
+
+
+# ── Next.js / Node.js ─────────────────────────────────────────────
+# Dependencies
+web/node_modules/
+node_modules/
+
+# Next.js build output
+web/.next/
+web/out/
+.next/
+out/
+
+# Next.js cache
+web/.next/cache/
+
+# Production build
+web/dist/
+web/build/
+
+# TypeScript build info
+*.tsbuildinfo
+web/*.tsbuildinfo
+web/next-env.d.ts
+
+# Package manager locks — keep package-lock.json or yarn.lock,
+# but ignore the other to avoid conflicts
+# (this project uses npm — ignore yarn and pnpm)
+yarn.lock
+.pnpm-store/
+.pnpm-debug.log*
+
+# npm debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# ESLint cache
+.eslintcache
+
+# Prettier cache
+.prettiercache
+
+# Storybook
+web/storybook-static/
+
+
+# ── Docker ────────────────────────────────────────────────────────
+# Local override files (use docker-compose.override.yml for local dev)
+docker-compose.override.yml
+
+# Docker volumes data (if mounted locally)
+docker-data/
+pgdata/
+redis-data/
+qdrant-data/
+
+
+# ── Databases & Storage ───────────────────────────────────────────
+# SQLite (used in tests)
 *.db
-patent_gap_finder.db
+*.sqlite
+*.sqlite3
 
-# IDE
+# PostgreSQL dumps
+*.sql.gz
+*.dump
+*.backup
+pg_dump/
+
+# Redis dump file
+dump.rdb
+appendonly.aof
+
+# Qdrant local storage
+qdrant_storage/
+.qdrant/
+
+
+# ── PDF & Report Output ───────────────────────────────────────────
+# Generated PDF reports — these are outputs, not source files
+reports/
+output/
+*.pdf
+
+# Uploaded research papers (user uploads — not part of source)
+uploads/
+papers/
+*.pdf
+
+
+# ── Logs ──────────────────────────────────────────────────────────
+logs/
+*.log
+*.log.*
+log/
+npm-debug.log*
+pip-log.txt
+pip-delete-this-directory.txt
+
+
+# ── IDEs & Editors ────────────────────────────────────────────────
+
+# VS Code
 .vscode/
-.idea/
+!.vscode/extensions.json
+!.vscode/settings.json.example
 
-# OS
+# JetBrains (PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+Session.vim
+.vim/
+
+# Emacs
+*~
+\#*\#
+.\#*
+*.elc
+auto-save-list
+tramp
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Cursor
+.cursor/
+
+# Zed
+.zed/
+
+
+# ── Operating System ──────────────────────────────────────────────
+
+# macOS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon?
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
 Thumbs.db
-.AppleDouble/
-*~ 
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+
+# ── Cloud & Deployment ────────────────────────────────────────────
+
+# Railway — keep railway.toml (it is config), ignore generated files
+.railway/
+
+# Vercel
+.vercel/
+
+# AWS
+.aws/
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Google Cloud
+.gcloud/
+gcloud-service-key.json
+service-account.json
+
+# Fly.io
+.fly/
+
+
+# ── Testing & CI ──────────────────────────────────────────────────
+# Test output artifacts
+test-results/
+test-reports/
+junit.xml
+.testmondata
+
+# Playwright (if added later)
+playwright-report/
+test-results/
+playwright/.cache/
+
+
+# ── Temporary & Misc ──────────────────────────────────────────────
+tmp/
+temp/
+.tmp/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.patch
+
+# Archive files
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Benchmark results
+benchmarks/results/
+
+# Documentation build output (if Sphinx/MkDocs added later)
+docs/_build/
+docs/site/
+site/
