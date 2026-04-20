@@ -135,32 +135,12 @@ async def detect_whitespace(
             n.payload.get("title", "") for n in neighbors[:3]
         ]
 
-        # Step 8 — Gemini assessment (only for white-space claims)
+        # Novelty assessment is delegated to the host LLM.
+        # The LLM will call save_whitespace with assessments.
         gemini_assessment = ""
         gemini_confidence = 0.0
         recommended_scope = "medium"
         ipc_codes = []
-
-        if is_whitespace:
-            try:
-                from patent_gap_finder.ai.novelty_reasoner import assess_novelty
-                assessment = await assess_novelty(
-                    claim=claim,
-                    nearest_patents=[
-                        {"title": n.payload.get("title", ""),
-                         "abstract": n.payload.get("abstract", "")}
-                        for n in neighbors[:3]
-                    ],
-                    avg_similarity=avg_similarity,
-                    nearest_cluster_label=nearest_label,
-                )
-                gemini_assessment = assessment.get("gemini_novelty_assessment", "")
-                gemini_confidence = assessment.get("gemini_confidence", 0.0)
-                recommended_scope = assessment.get("recommended_claim_scope", "medium")
-                ipc_codes = assessment.get("ipc_whitespace_codes", [])
-            except Exception as e:
-                logger.warning("Gemini novelty assessment failed: %s", e)
-                gemini_assessment = "Assessment unavailable"
 
         opportunity = WhitespaceOpportunity(
             opportunity_id=str(uuid.uuid4()),

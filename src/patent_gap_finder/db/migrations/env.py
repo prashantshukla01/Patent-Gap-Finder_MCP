@@ -12,10 +12,10 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, engine_from_config, pool
 
 # Add src to path so models can be imported
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # Import all models so Base.metadata has them registered
 from patent_gap_finder.db.models import Base  # noqa: E402
@@ -30,12 +30,19 @@ if config.config_file_name is not None:
 # Set target metadata for autogenerate
 target_metadata = Base.metadata
 
+# Load .env file so DATABASE_URL is available
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv()
+
 # Allow DATABASE_URL env var to override alembic.ini
+# Keep the raw URL for create_engine (avoids configparser % interpolation issues)
+_raw_sync_url: str | None = None
 db_url = os.environ.get("DATABASE_URL")
 if db_url:
     # Convert asyncpg URL to psycopg2 for Alembic (sync migrations)
-    sync_url = db_url.replace("+asyncpg", "+psycopg2").replace("+aiosqlite", "")
-    config.set_main_option("sqlalchemy.url", sync_url)
+    _raw_sync_url = db_url.replace("+asyncpg", "+psycopg2").replace("+aiosqlite", "")
+    # Escape % for configparser (used by offline mode / get_main_option)
+    config.set_main_option("sqlalchemy.url", _raw_sync_url.replace("%", "%%"))
 
 
 def _guard_sqlite(url: str) -> None:
@@ -71,14 +78,12 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode (connect and apply)."""
-    url = config.get_main_option("sqlalchemy.url")
+    url = _raw_sync_url or config.get_main_option("sqlalchemy.url")
     _guard_sqlite(url)
 
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Use create_engine directly to avoid configparser %-interpolation
+    # issues with URL-encoded passwords (e.g. %40 for @)
+    connectable = create_engine(url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
         context.configure(

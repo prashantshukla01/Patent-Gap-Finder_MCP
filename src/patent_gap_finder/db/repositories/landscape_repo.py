@@ -173,3 +173,25 @@ async def get_whitespace_opportunities(
         .order_by(WhitespaceOpportunityRecord.novelty_score.desc())
     )
     return list(result.scalars().all())
+
+
+async def update_whitespace_assessment(
+    db: AsyncSession,
+    opportunity_id: str,
+    data: dict,
+) -> None:
+    """Update a whitespace opportunity with LLM novelty assessment.
+
+    Args:
+        db: Async database session.
+        opportunity_id: UUID of the whitespace opportunity.
+        data: Dict with assessment fields (gemini_assessment,
+            gemini_confidence, recommended_claim_scope, ipc_whitespace_codes).
+    """
+    await db.execute(
+        update(WhitespaceOpportunityRecord)
+        .where(WhitespaceOpportunityRecord.id == opportunity_id)
+        .values(**data)
+    )
+    await db.flush()
+

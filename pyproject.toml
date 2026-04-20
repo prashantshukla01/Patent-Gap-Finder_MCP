@@ -9,7 +9,7 @@ authors = [{ name = "Patent Gap Finder Team" }]
 
 dependencies = [
     # Phase 1
-    "fastmcp>=2.0",
+    "fastmcp>=2.0,<3.0",
     "pymupdf>=1.24",
     "pdfplumber>=0.11",
     "httpx>=0.27",
@@ -65,3 +65,10 @@ pythonpath = ["src"]
 [tool.ruff]
 target-version = "py311"
 src = ["src", "tests"]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22.1",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+]

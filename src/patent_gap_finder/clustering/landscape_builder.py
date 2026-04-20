@@ -41,6 +41,47 @@ class ClusteringFailedError(Exception):
     """HDBSCAN clustering failed after retries."""
 
 
+# Stop-words excluded from auto-labels
+_STOP_WORDS = {
+    "a", "an", "the", "and", "or", "of", "for", "in", "to", "with",
+    "on", "by", "at", "from", "is", "are", "was", "were", "be", "been",
+    "has", "have", "had", "do", "does", "did", "will", "would", "shall",
+    "should", "may", "might", "can", "could", "not", "no", "its", "it",
+    "this", "that", "these", "those", "using", "based", "method", "methods",
+    "system", "systems", "apparatus", "device", "process", "thereof",
+}
+
+
+def _auto_label_cluster(titles: list[str], cluster_id: int) -> str:
+    """Generate a cluster label from representative patent titles.
+
+    Extracts the most common meaningful words across the titles to
+    produce a short label like "neural network image recognition".
+
+    Args:
+        titles: List of patent titles in this cluster.
+        cluster_id: Cluster ID (used as fallback).
+
+    Returns:
+        A short descriptive label string.
+    """
+    import re
+    from collections import Counter
+
+    word_counts: Counter[str] = Counter()
+    for title in titles:
+        words = re.findall(r"[a-zA-Z]{3,}", title.lower())
+        meaningful = [w for w in words if w not in _STOP_WORDS]
+        word_counts.update(meaningful)
+
+    if not word_counts:
+        return f"cluster {cluster_id}"
+
+    # Take top 3-4 most common words
+    top_words = [word for word, _ in word_counts.most_common(4)]
+    return " ".join(top_words)
+
+
 async def build_landscape(
     session_id: str,
     db: AsyncSession,
@@ -138,19 +179,12 @@ async def build_landscape(
             all_embeddings, labels, cluster_id
         )
 
-        # Label via Gemini (only top 20 clusters to save quota)
+        # Label via keyword extraction from representative titles
         label = f"cluster {cluster_id}"
         tech_domain = ""
-        if idx < 20 and centroid_titles:
-            try:
-                from patent_gap_finder.ai.novelty_reasoner import label_cluster
-                label_result = await label_cluster(centroid_titles, patent_count)
-                label = label_result.get("label", label)
-                tech_domain = label_result.get("technical_domain", "")
-            except Exception as e:
-                logger.warning("Gemini cluster labeling failed for %d: %s",
-                               cluster_id, e)
-                label = f"uncategorized domain {cluster_id}"
+        if centroid_titles:
+            label = _auto_label_cluster(centroid_titles, cluster_id)
+            tech_domain = label
 
         clusters.append(ClusterInfo(
             cluster_id=int(cluster_id),
