@@ -42,6 +42,10 @@ from patent_gap_finder.tools.map_landscape import map_landscape as _map_landscap
 from patent_gap_finder.tools.find_whitespace import find_whitespace as _find_whitespace_impl
 from patent_gap_finder.tools.draft_claims import draft_claims as _draft_claims_impl
 from patent_gap_finder.tools.export_report import export_report as _export_report_impl
+from patent_gap_finder.tools.save_claims import save_claims as _save_claims_impl
+from patent_gap_finder.tools.save_classification import save_classification as _save_classification_impl
+from patent_gap_finder.tools.save_whitespace import save_whitespace as _save_whitespace_impl
+from patent_gap_finder.tools.save_drafted_claims import save_drafted_claims as _save_drafted_claims_impl
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -155,16 +159,25 @@ mcp = FastMCP(
     instructions=(
         "Patent Gap Finder helps researchers discover patentable white-space "
         "opportunities from their research papers.\n\n"
-        "Workflow:\n"
-        "1. parse_paper(source, extract_with_ai=true) — parse and extract claims\n"
-        "2. classify_ipc(session_id) — classify claims into IPC/CPC codes\n"
-        "3. search_prior_art(session_id) — search USPTO + EPO for prior art\n"
-        "4. get_search_status(job_id) — poll search progress\n"
-        "5. map_landscape(session_id) — embed patents and cluster landscape\n"
-        "6. find_whitespace(session_id) — detect patentable gaps\n"
-        "7. draft_claims(session_id) — generate USPTO patent claims\n"
-        "8. export_report(session_id) — download PDF analysis report\n"
-        "9. get_session(session_id) — retrieve full analysis results"
+        "YOU (the LLM) do the AI reasoning. The server does parsing, DB, "
+        "embeddings, and clustering. Follow this workflow:\n\n"
+        "1. parse_paper(source/content) — parse paper, get ai_instructions\n"
+        "2. [YOU] Extract patent claims from the paper content\n"
+        "3. save_claims(session_id, claims) — save your extracted claims\n"
+        "4. classify_ipc(session_id) — get claims + IPC instructions\n"
+        "5. [YOU] Classify claims into IPC/CPC codes\n"
+        "6. save_classification(session_id, mappings) — save classifications\n"
+        "7. search_prior_art(session_id) — search for prior art\n"
+        "8. get_search_status(job_id) — poll search progress\n"
+        "9. map_landscape(session_id) — cluster patents\n"
+        "10. find_whitespace(session_id) — detect gaps + get assessment instructions\n"
+        "11. [YOU] Assess novelty of each whitespace opportunity\n"
+        "12. save_whitespace(session_id, assessments) — save assessments\n"
+        "13. draft_claims(session_id) — get opportunities + drafting instructions\n"
+        "14. [YOU] Draft USPTO patent claims\n"
+        "15. save_drafted_claims(session_id, claim_sets) — save claims\n"
+        "16. export_report(session_id) — download PDF report\n"
+        "17. get_session(session_id) — retrieve full results"
     ),
     lifespan=lifespan,
 )
@@ -175,40 +188,106 @@ mcp = FastMCP(
 # ──────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-async def parse_paper(source: str, extract_with_ai: bool = False) -> dict:
+async def parse_paper(
+    source: str = "",
+    content: str = "",
+    title: str = "",
+) -> dict:
     """Parse a research paper and extract structured content + patent claims.
 
-    Accepts a local PDF file path or an arXiv identifier (bare ID or URL).
-    Returns structured data including title, authors, abstract, sections,
-    and candidate patentable claims.
+    Accepts a local PDF file path, an arXiv identifier, or raw text content.
+    Returns structured data with heuristic claims and AI extraction instructions.
 
-    When extract_with_ai=True, uses Google Gemini to extract high-quality
-    patent-style claims and creates a database session for tracking.
+    After calling this tool, read the ai_instructions in the response,
+    extract patent claims from the paper content, then call save_claims.
 
     Args:
-        source: Path to a PDF file or an arXiv ID/URL.
-        extract_with_ai: If True, use Gemini AI for claim extraction.
+        source: Path to a PDF file or an arXiv ID/URL. May be empty if
+            content is provided.
+        content: Raw text content of the paper (e.g. pasted from an
+            uploaded PDF in Claude Desktop). When provided, source is
+            ignored and no file-system access is needed.
+        title: Optional paper title to use when providing raw content.
 
     Returns:
-        Parsed paper data with session_id if persisted.
+        Parsed paper data with session_id and ai_instructions.
     """
-    return await _parse_paper_impl(source, extract_with_ai=extract_with_ai)
+    return await _parse_paper_impl(
+        source, content=content, title=title
+    )
 
 
 @mcp.tool()
 async def classify_ipc(session_id: str) -> dict:
-    """Classify extracted claims into IPC/CPC patent codes using Gemini AI.
+    """Get claims with IPC/CPC classification instructions.
 
-    Requires a session with AI-extracted claims (run parse_paper with
-    extract_with_ai=true first).
+    Returns AI-extracted claims from the session with instructions for
+    you to classify them into IPC codes. After classifying, call
+    save_classification with the results.
 
     Args:
-        session_id: UUID of an analysis session from parse_paper.
+        session_id: UUID of an analysis session with saved claims.
 
     Returns:
-        IPC classification results with mappings, top codes, and keywords.
+        Claims data with IPC classification instructions.
     """
     return await _classify_ipc_impl(session_id)
+
+
+@mcp.tool()
+async def save_claims(
+    session_id: str,
+    claims: list[dict],
+    paper_summary: str = "",
+    primary_domain: str = "",
+) -> dict:
+    """Save your extracted patent claims to the database.
+
+    Call this after parse_paper returns ai_instructions. Pass the claims
+    you extracted from the paper content.
+
+    Args:
+        session_id: UUID from parse_paper response.
+        claims: List of claim dicts, each with: claim_text, claim_type,
+            technical_domain, novelty_basis, source_section, confidence.
+        paper_summary: 2-3 sentence technical summary of the paper.
+        primary_domain: Main technical field (e.g. 'machine learning').
+
+    Returns:
+        Confirmation with claim count and next step.
+    """
+    return await _save_claims_impl(
+        session_id, claims, paper_summary=paper_summary,
+        primary_domain=primary_domain,
+    )
+
+
+@mcp.tool()
+async def save_classification(
+    session_id: str,
+    mappings: list[dict],
+    top_ipc_codes: list[str] | None = None,
+    search_keywords: list[str] | None = None,
+) -> dict:
+    """Save your IPC/CPC classifications to the database.
+
+    Call this after classify_ipc returns classification instructions.
+
+    Args:
+        session_id: UUID of the analysis session.
+        mappings: List of mapping dicts, each with: claim_text, primary_ipc,
+            secondary_ipc, cpc_code, confidence, rationale.
+        top_ipc_codes: Deduplicated IPC codes ranked by frequency.
+        search_keywords: 10-15 terms for USPTO patent search.
+
+    Returns:
+        Confirmation with classification count and next step.
+    """
+    return await _save_classification_impl(
+        session_id, mappings,
+        top_ipc_codes=top_ipc_codes,
+        search_keywords=search_keywords,
+    )
 
 
 @mcp.tool()
@@ -245,7 +324,7 @@ async def map_landscape(session_id: str) -> dict:
     """Build a patent landscape map from search results.
 
     Embeds all patents using sentence-transformers, clusters with HDBSCAN,
-    and labels clusters with Gemini AI. Requires Phase 3 completion.
+    and auto-labels clusters from patent titles. Requires search completion.
 
     Args:
         session_id: UUID of the analysis session.
@@ -263,18 +342,38 @@ async def find_whitespace(
 ) -> dict:
     """Detect patentable white-space opportunities.
 
-    Compares AI-extracted paper claims against the patent landscape to
-    find regions with no dense prior art coverage. Uses Gemini for
-    novelty assessment of genuine candidates.
+    Compares AI-extracted paper claims against the patent landscape.
+    Returns gap candidates with instructions for you to assess novelty.
+    After assessing, call save_whitespace with the results.
 
     Args:
         session_id: UUID of the analysis session.
         min_novelty_score: Minimum novelty score threshold (0.0-1.0).
 
     Returns:
-        White-space report with ranked opportunities and Gemini assessments.
+        White-space report with opportunities and assessment instructions.
     """
     return await _find_whitespace_impl(session_id, min_novelty_score=min_novelty_score)
+
+
+@mcp.tool()
+async def save_whitespace(
+    session_id: str,
+    assessments: list[dict],
+) -> dict:
+    """Save your novelty assessments for whitespace opportunities.
+
+    Call this after find_whitespace returns assessment instructions.
+
+    Args:
+        session_id: UUID of the analysis session.
+        assessments: List of assessment dicts, each with: opportunity_id,
+            novelty_assessment, confidence, recommended_scope, ipc_codes.
+
+    Returns:
+        Confirmation with update count and next step.
+    """
+    return await _save_whitespace_impl(session_id, assessments)
 
 
 @mcp.tool()
@@ -282,20 +381,40 @@ async def draft_claims(
     session_id: str,
     min_novelty_score: float = 0.5,
 ) -> dict:
-    """Generate USPTO-format patent claims for whitespace opportunities.
+    """Get whitespace opportunities with USPTO claim drafting instructions.
 
-    Requires Phase 4 completion (find_whitespace). Uses Gemini AI to draft
-    properly structured independent and dependent claims following USPTO
-    formatting rules.
+    Returns opportunities with nearest patent context and drafting rules.
+    After drafting claims, call save_drafted_claims with the results.
 
     Args:
         session_id: UUID of the analysis session.
         min_novelty_score: Minimum novelty score for claim drafting (0.0-1.0).
 
     Returns:
-        Claim sets with formatted claims, rationale, and filing order.
+        Opportunities with drafting instructions and USPTO rules.
     """
     return await _draft_claims_impl(session_id, min_novelty_score=min_novelty_score)
+
+
+@mcp.tool()
+async def save_drafted_claims(
+    session_id: str,
+    claim_sets: list[dict],
+) -> dict:
+    """Save your drafted USPTO patent claims to the database.
+
+    Call this after draft_claims returns drafting instructions.
+
+    Args:
+        session_id: UUID of the analysis session.
+        claim_sets: List of claim set dicts, each with: opportunity_id,
+            claims (list of {claim_number, claim_text, claim_type, depends_on,
+            patent_claim_category}), drafting_rationale, distinguishing_features.
+
+    Returns:
+        Confirmation with claim count and next step.
+    """
+    return await _save_drafted_claims_impl(session_id, claim_sets)
 
 
 @mcp.tool()

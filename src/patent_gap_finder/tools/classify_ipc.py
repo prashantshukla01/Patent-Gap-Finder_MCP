@@ -1,7 +1,8 @@
 """MCP tool for IPC/CPC classification of extracted claims.
 
-Loads AI-extracted claims from a session, classifies them via Gemini,
-persists the results, and returns the full classification response.
+Loads AI-extracted claims from a session and returns them with
+classification instructions for the host LLM.  The LLM classifies
+the claims and calls save_classification to persist the results.
 """
 
 from __future__ import annotations
@@ -9,16 +10,8 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from patent_gap_finder.ai.gemini_client import (
-    GeminiDailyQuotaError,
-    GeminiRateLimitError,
-    GeminiResponseValidationError,
-    get_gemini_client,
-)
-from patent_gap_finder.ai.ipc_classifier import classify_ipc as _classify
 from patent_gap_finder.db.connection import get_db_session
 from patent_gap_finder.db.repositories import claim_repo, session_repo
-from patent_gap_finder.models.ipc import AIExtractedClaim
 
 logger = logging.getLogger(__name__)
 
@@ -33,27 +26,21 @@ def _is_valid_uuid(value: str) -> bool:
 
 
 async def classify_ipc(session_id: str) -> dict:
-    """Classify extracted claims into IPC/CPC codes.
+    """Return AI-extracted claims with IPC classification instructions.
 
-    Full pipeline:
-    1. Validate session_id format
-    2. Load session from DB
-    3. Load AI-extracted claims
-    4. Call Gemini IPC classifier
-    5. Persist IPC results to each claim
-    6. Update session with top_ipc_codes and search_keywords
-    7. Return classification response
+    Loads claims from the database and returns them along with structured
+    instructions for the host LLM to classify them into IPC/CPC codes.
+    The LLM should then call save_classification with the results.
 
     Args:
         session_id: UUID string of the analysis session.
 
     Returns:
-        Dict with classification results and session_id, or
+        Dict with claims data and classification instructions, or
         structured error dict on failure.
     """
     session_id = session_id.strip()
 
-    # 1. Validate UUID
     if not _is_valid_uuid(session_id):
         return {
             "error": "INVALID_SESSION_ID",
@@ -63,7 +50,7 @@ async def classify_ipc(session_id: str) -> dict:
 
     try:
         async with get_db_session() as db:
-            # 2. Load session
+            # Load session
             session = await session_repo.get_session(db, session_id)
             if session is None:
                 return {
@@ -72,7 +59,7 @@ async def classify_ipc(session_id: str) -> dict:
                     "session_id": session_id,
                 }
 
-            # 3. Load AI claims
+            # Load AI claims
             ai_claims = await claim_repo.get_claims_by_source(
                 db, session_id, "ai"
             )
@@ -81,103 +68,85 @@ async def classify_ipc(session_id: str) -> dict:
                     "error": "NO_AI_CLAIMS",
                     "message": (
                         f"No AI-extracted claims found for session {session_id}. "
-                        "Run parse_paper with extract_with_ai=true first."
+                        "Run parse_paper first, then call save_claims with extracted claims."
                     ),
                     "session_id": session_id,
                 }
 
-            # 4. Convert to Pydantic models for the classifier
-            claim_models = [
-                AIExtractedClaim(
-                    claim_text=c.claim_text,
-                    claim_type=c.claim_type,
-                    technical_domain=c.technical_domain or "",
-                    novelty_basis=c.novelty_basis or "",
-                    source_section=c.source_section,
-                    confidence=c.confidence,
-                )
+            primary_domain = session.primary_domain or "general technology"
+
+            # Build claims list for the LLM
+            claims_data = [
+                {
+                    "claim_text": c.claim_text,
+                    "claim_type": c.claim_type,
+                    "technical_domain": c.technical_domain or "",
+                    "novelty_basis": c.novelty_basis or "",
+                    "source_section": c.source_section,
+                    "confidence": c.confidence,
+                }
                 for c in ai_claims
             ]
 
-            primary_domain = session.primary_domain or "general technology"
-
-            # Update status
-            await session_repo.update_session_status(
-                db, session_id, "classifying"
-            )
-
-        # 5. Call Gemini (outside DB session to avoid long-held connections)
-        client = get_gemini_client()
-        classification = await _classify(
-            claim_models,
-            primary_domain,
-            client=client,
-        )
-
-        # 6. Persist results
-        async with get_db_session() as db:
-            # Match classifications to claims by claim_text
-            claim_text_to_id = {c.claim_text: c.id for c in ai_claims}
-
-            for mapping in classification.mappings:
-                claim_id = claim_text_to_id.get(mapping.claim_text)
-                if claim_id:
-                    await claim_repo.update_claim_ipc(db, claim_id, {
-                        "primary_ipc": mapping.primary_ipc,
-                        "secondary_ipc": mapping.secondary_ipc,
-                        "cpc_code": mapping.cpc_code,
-                        "confidence": mapping.confidence,
-                        "is_valid_ipc": mapping.is_valid_ipc,
-                    })
-
-            # 7. Update session
-            await session_repo.update_session_results(db, session_id, {
-                "top_ipc_codes": classification.top_ipc_codes,
-                "search_keywords": classification.search_keywords,
-            })
-            await session_repo.update_session_status(
-                db, session_id, "complete"
-            )
-            await session_repo.increment_request_counter(
-                db, session_id, count=1
-            )
-
-        result = classification.model_dump()
-        result["session_id"] = session_id
-        return result
-
-    except GeminiDailyQuotaError:
-        logger.error("Gemini daily quota exhausted during IPC classification")
         return {
-            "error": "GEMINI_QUOTA_EXHAUSTED",
-            "message": "Daily Gemini free-tier quota exhausted. Try again tomorrow.",
             "session_id": session_id,
+            "primary_domain": primary_domain,
+            "claims_to_classify": claims_data,
+            "total_claims": len(claims_data),
+            "ai_instructions": {
+                "task": "classify_ipc_codes",
+                "description": (
+                    "Classify each claim below into IPC (International Patent "
+                    "Classification) and CPC codes. Then call the save_classification "
+                    "tool with the results."
+                ),
+                "save_tool": "save_classification",
+                "save_args": {
+                    "session_id": session_id,
+                    "mappings": "list of mapping dicts (see schema below)",
+                    "top_ipc_codes": "deduplicated IPC codes ranked by frequency",
+                    "search_keywords": "10-15 terms for USPTO patent search",
+                },
+                "mapping_schema": {
+                    "claim_text": "The claim text that was classified (must match exactly)",
+                    "primary_ipc": "Primary IPC code, e.g. 'G06N 3/08' (format: [A-H][0-9][0-9][A-Z] [digits]/[digits])",
+                    "secondary_ipc": "list of additional IPC codes",
+                    "cpc_code": "CPC code if different from IPC",
+                    "confidence": "0.0-1.0 classification confidence",
+                    "rationale": "One-sentence explanation of why this code was assigned",
+                },
+                "ipc_reference": {
+                    "A": "Human Necessities",
+                    "B": "Performing Operations; Transporting",
+                    "C": "Chemistry; Metallurgy",
+                    "D": "Textiles; Paper",
+                    "E": "Fixed Constructions",
+                    "F": "Mechanical Engineering; Lighting; Heating; Weapons",
+                    "G": "Physics (G06 = computing, G06N = ML/AI)",
+                    "H": "Electricity (H04 = communications)",
+                },
+                "key_subclasses": {
+                    "G06F": "Electric digital data processing",
+                    "G06N": "Neural networks, ML, AI",
+                    "G06V": "Image or video recognition",
+                    "G06T": "Image data processing",
+                    "H04L": "Transmission of digital information",
+                },
+                "rules": [
+                    "IPC code format: [A-H][0-9]{2}[A-Z] [0-9]+/[0-9]+ (e.g. 'G06N 3/08')",
+                    "Be conservative — low confidence if uncertain",
+                    "Generate 10-15 search_keywords for USPTO PatentsView search",
+                    "Deduplicate top_ipc_codes across all claims",
+                ],
+            },
+            "next_step": (
+                "Classify each claim into IPC codes using the instructions above, "
+                f"then call save_classification with session_id='{session_id}'"
+            ),
         }
-    except GeminiRateLimitError:
-        logger.error("Gemini rate limit exceeded during IPC classification")
-        return {
-            "error": "GEMINI_RATE_LIMITED",
-            "message": "Gemini rate limit exceeded after retries.",
-            "session_id": session_id,
-            "retry_after_seconds": 60,
-        }
-    except GeminiResponseValidationError as e:
-        logger.error("Gemini response validation failed: %s", e)
-        return {
-            "error": "GEMINI_VALIDATION_ERROR",
-            "message": str(e),
-            "session_id": session_id,
-        }
+
     except Exception as e:
         logger.exception("Unexpected error in classify_ipc")
-        # Try to mark session as failed
-        try:
-            async with get_db_session() as db:
-                await session_repo.update_session_status(
-                    db, session_id, "failed", error_message=str(e)
-                )
-        except Exception:
-            pass
         return {
             "error": "INTERNAL_ERROR",
             "message": f"Unexpected error: {e}",

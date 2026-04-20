@@ -1,8 +1,11 @@
 """MCP tool wrapper for the parse_paper capability.
 
-Routes input to the appropriate parser (local PDF or arXiv) and returns
-a structured ParsedPaper dict.  When ``extract_with_ai=True``, triggers
-Gemini-powered claim extraction and persists results to the database.
+Routes input to the appropriate parser (local PDF, arXiv, or raw text
+content) and returns a structured ParsedPaper dict with AI extraction
+instructions for the host LLM.
+
+The ``content`` parameter allows Claude Desktop to pass extracted text
+from an uploaded PDF directly — bypassing file-system access.
 
 All exceptions are caught and returned as structured error dicts — the
 MCP layer never sees unhandled exceptions.
@@ -10,51 +13,74 @@ MCP layer never sees unhandled exceptions.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
+from patent_gap_finder.models.paper import (
+    CandidateClaim,
+    ParsedPaper,
+    ParsedSection,
+)
 from patent_gap_finder.parsers.arxiv_parser import is_arxiv_source, parse_arxiv
 from patent_gap_finder.parsers.pdf_parser import parse_pdf
+from patent_gap_finder.utils.text_utils import (
+    classify_section_type,
+    clean_text,
+    extract_candidate_claims,
+)
 
 logger = logging.getLogger(__name__)
 
 
-async def parse_paper(source: str, extract_with_ai: bool = False) -> dict:
-    """Parse a research paper from a file path or arXiv reference.
+async def parse_paper(
+    source: str = "",
+    content: str = "",
+    title: str = "",
+) -> dict:
+    """Parse a research paper from a file path, arXiv reference, or raw text.
 
-    This is the core MCP tool implementation.  It detects whether *source*
-    is a local PDF file or an arXiv reference, delegates to the appropriate
-    parser, and returns the parsed paper as a serializable dict.
-
-    When *extract_with_ai* is True:
-    1. Checks for duplicate papers (by file hash)
-    2. Creates a database analysis session
-    3. Runs Gemini-powered claim extraction
-    4. Persists both heuristic and AI claims
+    Returns structured paper data with heuristic claims and instructions
+    for the host LLM to extract patent-quality claims.  The LLM should
+    then call ``save_claims`` with the extracted claims.
 
     Args:
         source: Either a local file path to a PDF, or an arXiv identifier.
-        extract_with_ai: If True, run Gemini AI claim extraction and
-            persist results to the database.
+            May be empty if *content* is provided.
+        content: Raw text content of the paper (e.g., pasted from an
+            uploaded PDF).  When provided, *source* is ignored.
+        title: Optional paper title.  Used when *content* is provided
+            and a title cannot be inferred from the text.
 
     Returns:
-        A dict serialization of :class:`ParsedPaper` on success, or an
-        error dict on failure.
+        A dict with parsed paper data, session_id, and ai_instructions.
     """
     source = source.strip()
+    content = content.strip()
 
-    if not source:
+    if not source and not content:
         return {
             "error": "VALIDATION_ERROR",
-            "message": "Empty source provided. Please supply a PDF file path or arXiv ID/URL.",
+            "message": (
+                "No input provided. Either supply a file path / arXiv ID "
+                "via 'source', or paste the paper text via 'content'."
+            ),
         }
 
     try:
-        # ── Phase 1: Parse the paper ──
-        if is_arxiv_source(source):
+        # ── Route: raw text content ──
+        if content:
+            logger.info("Building ParsedPaper from raw text content (%d chars)", len(content))
+            parsed = _parse_from_text(content, title=title)
+        # ── Route: arXiv ──
+        elif is_arxiv_source(source):
             logger.info("Detected arXiv source: %s", source)
             parsed = await parse_arxiv(source)
+        # ── Route: local PDF ──
         else:
             path = Path(source).expanduser().resolve()
             if not path.exists():
@@ -70,12 +96,7 @@ async def parse_paper(source: str, extract_with_ai: bool = False) -> dict:
             logger.info("Parsing local PDF: %s", path)
             parsed = parse_pdf(str(path))
 
-        # ── Phase 1 only: return heuristic results ──
-        if not extract_with_ai:
-            return await _persist_heuristic_only(parsed)
-
-        # ── Phase 2: AI extraction with DB persistence ──
-        return await _extract_with_ai(parsed)
+        return await _persist_and_instruct(parsed)
 
     except FileNotFoundError as e:
         logger.error("File not found: %s", e)
@@ -88,11 +109,147 @@ async def parse_paper(source: str, extract_with_ai: bool = False) -> dict:
         return {"error": "INTERNAL_ERROR", "message": f"Unexpected error: {e}"}
 
 
-async def _persist_heuristic_only(parsed) -> dict:
-    """Persist heuristic results to DB and return response.
+# ──────────────────────────────────────────────────────────────────────
+# Raw-text → ParsedPaper builder
+# ──────────────────────────────────────────────────────────────────────
 
-    Creates a session and saves heuristic claims. If the database is not
-    available, returns results without persistence.
+# Heading patterns used when parsing raw (non-PDF) text
+_TEXT_HEADING_RE = re.compile(
+    r"^(?:"
+    r"(?:\d+(?:\.\d+)*\.?\s+)"   # "1.", "1.1", "2.3.1 "
+    r"|(?:[IVXivx]+\.?\s+)"      # "II.", "IV "
+    r"|(?:[A-Z]\.?\s+)"          # "A.", "B "
+    r")"
+    r"[A-Z]",                    # followed by uppercase letter
+    re.MULTILINE,
+)
+
+_KNOWN_HEADING_WORDS = {
+    "abstract", "introduction", "background", "related work",
+    "methodology", "method", "methods", "approach", "model",
+    "framework", "architecture", "design", "implementation",
+    "system", "proposed", "experiment", "experiments",
+    "evaluation", "results", "discussion", "analysis",
+    "ablation", "conclusion", "conclusions", "summary",
+    "future work", "references", "bibliography",
+    "acknowledgment", "acknowledgments", "acknowledgement",
+    "appendix", "claims", "description",
+}
+
+
+def _parse_from_text(
+    text: str,
+    *,
+    title: str = "",
+    top_n_claims: int = 10,
+) -> ParsedPaper:
+    """Build a :class:`ParsedPaper` from raw text content.
+
+    Uses lightweight heuristics to split the text into sections,
+    detect a title (if not supplied), and extract candidate claims.
+
+    Args:
+        text: Full paper text (e.g. pasted from a PDF upload).
+        title: Optional explicit title.
+        top_n_claims: Number of top candidate claims to return.
+
+    Returns:
+        A :class:`ParsedPaper` instance.
+    """
+    lines = text.split("\n")
+    file_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    # ── Infer title from first non-blank line if not provided ──
+    if not title:
+        for line in lines:
+            stripped = line.strip()
+            if stripped and len(stripped) > 5:
+                title = clean_text(stripped)
+                break
+        if not title:
+            title = "Untitled"
+
+    # ── Split into sections by heading heuristics ──
+    sections: list[ParsedSection] = []
+    current_heading = "Preamble"
+    current_content: list[str] = []
+
+    def _flush():
+        nonlocal current_heading, current_content
+        body = clean_text("\n".join(current_content))
+        if body:
+            sections.append(ParsedSection(
+                title=current_heading,
+                content=body,
+                section_type=classify_section_type(current_heading),
+            ))
+        current_content = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            current_content.append("")
+            continue
+
+        is_heading = False
+
+        # Check numbered heading pattern (e.g. "1. Introduction")
+        if _TEXT_HEADING_RE.match(stripped):
+            is_heading = True
+
+        # Check all-caps short line (e.g. "ABSTRACT")
+        elif (
+            stripped == stripped.upper()
+            and len(stripped) < 80
+            and len(stripped.split()) <= 6
+            and any(w.lower() in _KNOWN_HEADING_WORDS for w in stripped.split())
+        ):
+            is_heading = True
+
+        # Check known heading word as standalone line
+        elif (
+            stripped.lower().rstrip(":") in _KNOWN_HEADING_WORDS
+            and len(stripped) < 60
+        ):
+            is_heading = True
+
+        if is_heading:
+            _flush()
+            current_heading = stripped
+        else:
+            current_content.append(stripped)
+
+    _flush()  # last section
+
+    # ── Extract abstract ──
+    abstract = ""
+    for s in sections:
+        if s.section_type == "abstract":
+            abstract = s.content
+            break
+
+    # ── Extract candidate claims ──
+    candidate_claims: list[CandidateClaim] = extract_candidate_claims(
+        sections, top_n=top_n_claims
+    )
+
+    return ParsedPaper(
+        title=title,
+        authors=[],
+        abstract=abstract,
+        sections=sections,
+        candidate_claims=candidate_claims,
+        file_hash=file_hash,
+        parsed_at=datetime.now(timezone.utc),
+    )
+
+
+async def _persist_and_instruct(parsed) -> dict:
+    """Persist heuristic results and return AI extraction instructions.
+
+    Creates a session, saves heuristic claims, and returns the parsed
+    paper data along with instructions for the host LLM to extract
+    patent-quality claims.
     """
     result = parsed.model_dump(mode="json")
 
@@ -139,10 +296,6 @@ async def _persist_heuristic_only(parsed) -> dict:
                 await claim_repo.create_claims(db, session.id, heuristic_claims)
 
             result["session_id"] = session.id
-            result["note"] = (
-                "Heuristic extraction only. "
-                "Use extract_with_ai=true for AI-powered claims."
-            )
 
     except Exception as e:
         logger.warning("Database not available, returning without persistence: %s", e)
@@ -151,170 +304,42 @@ async def _persist_heuristic_only(parsed) -> dict:
             "Set DATABASE_URL to enable persistence."
         )
 
-    return result
-
-
-async def _extract_with_ai(parsed) -> dict:
-    """Run AI extraction and persist everything to DB."""
-    from patent_gap_finder.ai.claim_extractor import extract_claims
-    from patent_gap_finder.ai.gemini_client import (
-        GeminiDailyQuotaError,
-        GeminiRateLimitError,
-        GeminiResponseValidationError,
-        get_gemini_client,
+    # ── AI Extraction Instructions ──
+    # Always included — the host LLM reads these, extracts claims,
+    # and calls save_claims (if DB is available).
+    result["ai_instructions"] = {
+        "task": "extract_patent_claims",
+        "description": (
+            "Analyze the paper content above and extract 5-10 independent "
+            "patent-style claims. Then call the save_claims tool with the results."
+        ),
+        "save_tool": "save_claims",
+        "save_args": {
+            "session_id": result.get("session_id", ""),
+            "claims": "list of claim dicts (see schema below)",
+            "paper_summary": "2-3 sentence technical summary",
+            "primary_domain": "main technical field",
+        },
+        "claim_schema": {
+            "claim_text": "Full patent-style claim (e.g. 'A method for X comprising: step A; step B; step C.')",
+            "claim_type": "method | system | composition",
+            "technical_domain": "e.g. 'natural language processing'",
+            "novelty_basis": "Why this might be patentable — what is novel",
+            "source_section": "Paper section title this claim was derived from",
+            "confidence": "0.0-1.0 confidence score",
+        },
+        "rules": [
+            "Extract 5-10 claims, not more",
+            "Each claim must identify a specific novel technical contribution",
+            "Use patent claim structure: preamble + 'comprising' + body elements",
+            "Ignore incremental improvements with no structural novelty",
+            "If confidence is below 0.5, omit the claim",
+            "Classify each as 'method', 'system', or 'composition'",
+        ],
+    }
+    result["next_step"] = (
+        "Read the paper content, extract patent claims using the ai_instructions, "
+        f"then call save_claims with session_id='{result.get('session_id', '')}'"
     )
-    from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.repositories import claim_repo, session_repo
 
-    result = parsed.model_dump(mode="json")
-
-    # Check for Gemini API key
-    if not os.environ.get("GEMINI_API_KEY"):
-        return {
-            "error": "GEMINI_API_KEY_MISSING",
-            "message": (
-                "GEMINI_API_KEY not set. Get a free key at "
-                "https://aistudio.google.com/app/apikey"
-            ),
-        }
-
-    try:
-        async with get_db_session() as db:
-            # Check for duplicate
-            if parsed.file_hash:
-                existing = await session_repo.get_session_by_file_hash(
-                    db, parsed.file_hash
-                )
-                if existing:
-                    result["session_id"] = existing.id
-                    result["duplicate"] = True
-                    result["existing_session_id"] = existing.id
-                    result["note"] = (
-                        "This paper was previously analyzed. "
-                        "Use get_session to retrieve past results."
-                    )
-                    return result
-
-            # Create session
-            session = await session_repo.create_session(db, {
-                "paper_title": parsed.title,
-                "paper_authors": parsed.authors,
-                "source_url": parsed.source_url,
-                "file_hash": parsed.file_hash,
-            })
-            session_id = session.id
-
-    except Exception as e:
-        return {
-            "error": "DATABASE_ERROR",
-            "message": f"Failed to create session: {e}",
-        }
-
-    try:
-        # Run AI extraction
-        client = get_gemini_client()
-        ai_response = await extract_claims(parsed, client=client)
-
-        async with get_db_session() as db:
-            # Save heuristic claims
-            heuristic_claims = [
-                {
-                    "claim_text": c.text,
-                    "claim_type": c.claim_type,
-                    "source_section": c.source_section,
-                    "confidence": c.confidence,
-                    "extraction_source": "heuristic",
-                }
-                for c in parsed.candidate_claims
-            ]
-
-            # Save AI claims
-            ai_claims = [
-                {
-                    "claim_text": c.claim_text,
-                    "claim_type": c.claim_type,
-                    "technical_domain": c.technical_domain,
-                    "novelty_basis": c.novelty_basis,
-                    "source_section": c.source_section,
-                    "confidence": c.confidence,
-                    "extraction_source": "ai",
-                }
-                for c in ai_response.claims
-            ]
-
-            all_claims = heuristic_claims + ai_claims
-            if all_claims:
-                await claim_repo.create_claims(db, session_id, all_claims)
-
-            # Update session
-            await session_repo.update_session_results(db, session_id, {
-                "primary_domain": ai_response.primary_domain,
-                "paper_summary": ai_response.paper_summary,
-            })
-            await session_repo.update_session_status(
-                db, session_id, "extracting"
-            )
-            await session_repo.increment_request_counter(
-                db, session_id, count=1
-            )
-
-        result["session_id"] = session_id
-        result["ai_claims_extracted"] = len(ai_response.claims)
-        result["heuristic_claims_found"] = len(heuristic_claims)
-        result["paper_summary"] = ai_response.paper_summary
-        result["primary_domain"] = ai_response.primary_domain
-        result["ai_claims"] = [c.model_dump() for c in ai_response.claims]
-        result["next_step"] = (
-            f"Call classify_ipc with session_id='{session_id}' to get IPC codes"
-        )
-        return result
-
-    except GeminiDailyQuotaError:
-        async with get_db_session() as db:
-            await session_repo.update_session_status(
-                db, session_id, "failed",
-                error_message="Gemini daily quota exhausted",
-            )
-        return {
-            "error": "GEMINI_QUOTA_EXHAUSTED",
-            "message": "Daily Gemini free-tier quota exhausted. Try again tomorrow.",
-            "session_id": session_id,
-        }
-    except GeminiRateLimitError:
-        async with get_db_session() as db:
-            await session_repo.update_session_status(
-                db, session_id, "failed",
-                error_message="Gemini rate limit exceeded",
-            )
-        return {
-            "error": "GEMINI_RATE_LIMITED",
-            "message": "Gemini rate limit exceeded after retries.",
-            "session_id": session_id,
-            "retry_after_seconds": 60,
-        }
-    except GeminiResponseValidationError as e:
-        async with get_db_session() as db:
-            await session_repo.update_session_status(
-                db, session_id, "failed",
-                error_message=str(e),
-            )
-        return {
-            "error": "GEMINI_VALIDATION_ERROR",
-            "message": str(e),
-            "session_id": session_id,
-        }
-    except Exception as e:
-        logger.exception("Unexpected error in AI extraction")
-        try:
-            async with get_db_session() as db:
-                await session_repo.update_session_status(
-                    db, session_id, "failed",
-                    error_message=str(e),
-                )
-        except Exception:
-            pass
-        return {
-            "error": "INTERNAL_ERROR",
-            "message": f"Unexpected error during AI extraction: {e}",
-            "session_id": session_id,
-        }
+    return result

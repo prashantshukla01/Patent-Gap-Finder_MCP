@@ -79,7 +79,7 @@ async def find_whitespace(
                 "error": "NO_AI_CLAIMS",
                 "message": (
                     "No AI-extracted claims found with confidence > 0.4. "
-                    "Run parse_paper with extract_with_ai=true first."
+                    "Run parse_paper first, then call save_claims with extracted claims."
                 ),
             }
 
@@ -182,8 +182,7 @@ async def find_whitespace(
                     "nearest_cluster_label": o.nearest_cluster_label,
                     "nearest_patents": o.nearest_patents,
                     "nearest_patent_titles": o.nearest_patent_titles,
-                    "gemini_assessment": o.gemini_novelty_assessment,
-                    "gemini_confidence": o.gemini_confidence,
+                    "is_whitespace": o.is_whitespace,
                     "recommended_claim_scope": o.recommended_claim_scope,
                     "ipc_whitespace_codes": o.ipc_whitespace_codes,
                 }
@@ -192,5 +191,35 @@ async def find_whitespace(
             "non_whitespace_claims": len(claims) - ws_count,
             "top_opportunities": top_count,
             "analysis_summary": summary,
-            "next_step": "Call draft_claims to generate USPTO patent claims",
+            "ai_instructions": {
+                "task": "assess_novelty",
+                "description": (
+                    "Review each whitespace opportunity above. For each one that "
+                    "is_whitespace=true, provide a novelty assessment explaining "
+                    "WHY this claim is novel compared to the nearest prior art. "
+                    "Then call save_whitespace with the assessments."
+                ),
+                "save_tool": "save_whitespace",
+                "save_args": {
+                    "session_id": session_id,
+                    "assessments": "list of assessment dicts (see schema below)",
+                },
+                "assessment_schema": {
+                    "opportunity_id": "UUID from the whitespace_opportunities above",
+                    "novelty_assessment": "Detailed explanation of why this claim is novel",
+                    "confidence": "0.0-1.0 confidence in the assessment",
+                    "recommended_scope": "broad | medium | narrow claim scope",
+                    "ipc_codes": "list of relevant IPC codes for this gap",
+                },
+                "rules": [
+                    "Only assess opportunities where is_whitespace=true",
+                    "Compare the claim against nearest_patent_titles",
+                    "Recommend 'broad' scope if very novel, 'narrow' if marginal",
+                    "Suggest IPC codes based on claim content",
+                ],
+            },
+            "next_step": (
+                "Assess the novelty of each whitespace opportunity, "
+                f"then call save_whitespace with session_id='{session_id}'"
+            ),
         }

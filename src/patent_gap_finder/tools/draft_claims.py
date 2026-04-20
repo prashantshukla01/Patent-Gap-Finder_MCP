@@ -1,15 +1,14 @@
-"""MCP tool: draft_claims — generate USPTO-format patent claims.
+"""MCP tool: draft_claims — return whitespace data for LLM claim drafting.
 
-Requires find_whitespace to have completed first (Phase 4).
-Uses Gemini AI to draft independent and dependent claims for each
-whitespace opportunity.
+Returns whitespace opportunities with nearest patent context and
+USPTO drafting instructions.  The host LLM drafts the claims and
+calls save_drafted_claims to persist them.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -22,32 +21,32 @@ async def draft_claims(
     session_id: str,
     min_novelty_score: float = 0.5,
 ) -> dict:
-    """Draft USPTO-format patent claims for whitespace opportunities.
+    """Return whitespace opportunities with USPTO claim drafting instructions.
+
+    The host LLM should draft patent claims for each opportunity
+    and call save_drafted_claims to persist them.
 
     Args:
         session_id: UUID of the analysis session.
         min_novelty_score: Minimum novelty score to draft claims for (0.0-1.0).
 
     Returns:
-        Claim drafting results with claim sets, or structured error.
+        Whitespace data with drafting instructions, or structured error.
     """
     # Validate UUID
     if not UUID_PATTERN.match(session_id):
         return {"error": "INVALID_SESSION_ID", "message": "Not a valid UUID"}
 
     from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.models import AnalysisSession, WhitespaceOpportunityRecord
+    from patent_gap_finder.db.models import AnalysisSession
     from patent_gap_finder.db.repositories import (
         landscape_repo,
         patent_repo,
-        drafts_repo,
-        session_repo,
     )
-    from patent_gap_finder.drafting.claim_drafter import draft_all_claim_sets
 
     async with get_db_session() as db:
         # Load session
-        from sqlalchemy import select, update
+        from sqlalchemy import select
 
         result = await db.execute(
             select(AnalysisSession).where(AnalysisSession.id == session_id)
@@ -63,8 +62,9 @@ async def draft_claims(
                 "error": "PHASE4_INCOMPLETE",
                 "message": (
                     "White-space analysis not complete. Run the full pipeline first: "
-                    "parse_paper → classify_ipc → search_prior_art → map_landscape → "
-                    "find_whitespace, then call draft_claims."
+                    "parse_paper → save_claims → classify_ipc → save_classification → "
+                    "search_prior_art → map_landscape → find_whitespace → save_whitespace, "
+                    "then call draft_claims."
                 ),
             }
 
@@ -81,8 +81,7 @@ async def draft_claims(
                 "error": "NO_OPPORTUNITIES",
                 "message": (
                     f"No whitespace opportunities found with novelty score ≥ {min_novelty_score}. "
-                    "Try lowering the min_novelty_score parameter, or the paper may not "
-                    "have sufficiently novel claims compared to existing prior art."
+                    "Try lowering the min_novelty_score parameter."
                 ),
                 "suggestion": "Try min_novelty_score=0.3 for a broader analysis",
             }
@@ -100,106 +99,93 @@ async def draft_claims(
             if p.patent_id in all_patent_ids:
                 patent_details[p.patent_id] = {
                     "title": p.title,
-                    "abstract": p.abstract,
+                    "abstract": (p.abstract or "")[:300],
                     "patent_id": p.patent_id,
                     "assignee": p.assignee,
                 }
 
-        # Convert ORM objects to dicts for the drafter
-        opp_dicts = []
+        # Build opportunity data with patent context
+        opp_data = []
         for opp in whitespace_opps:
-            opp_dicts.append({
-                "id": opp.id,
+            nearest_patents = []
+            for pid in (opp.nearest_patent_ids or [])[:3]:
+                details = patent_details.get(pid, {})
+                if details:
+                    nearest_patents.append(details)
+
+            opp_data.append({
+                "opportunity_id": opp.id,
                 "claim_text": opp.claim_text,
                 "claim_type": opp.claim_type,
                 "novelty_score": opp.novelty_score,
+                "novelty_assessment": opp.gemini_assessment or "",
                 "recommended_claim_scope": opp.recommended_claim_scope or "medium",
-                "gemini_assessment": opp.gemini_assessment or "",
-                "ipc_whitespace_codes": opp.ipc_whitespace_codes or [],
-                "nearest_patent_ids": opp.nearest_patent_ids or [],
-                "is_whitespace": opp.is_whitespace,
+                "ipc_codes": opp.ipc_whitespace_codes or [],
+                "nearest_patents": nearest_patents,
             })
 
-        # Draft claims
-        logger.info(
-            "Drafting claims for %d opportunities (session=%s)",
-            len(opp_dicts),
-            session_id,
-        )
-
-        claim_sets = await draft_all_claim_sets(
-            opportunities=opp_dicts,
-            patent_details=patent_details,
-            min_novelty_score=min_novelty_score,
-        )
-
-        if not claim_sets:
-            return {
-                "error": "DRAFTING_FAILED",
-                "message": "AI claim drafting produced no results. Please retry.",
-            }
-
-        # Save to database
-        await drafts_repo.save_claim_sets(db, session_id, claim_sets)
-
-        # Update session status
-        await db.execute(
-            update(AnalysisSession)
-            .where(AnalysisSession.id == session_id)
-            .values(
-                claims_drafted=True,
-                updated_at=datetime.now(timezone.utc),
-            )
-        )
-        await db.commit()
-
-        # Build drafting summary
-        total_claims = sum(len(cs.claims) for cs in claim_sets)
-        ind_claims = sum(
-            1 for cs in claim_sets
-            for c in cs.claims if c.claim_type == "independent"
-        )
-        dep_claims = total_claims - ind_claims
-
-        drafting_summary = (
-            f"Generated {len(claim_sets)} claim sets covering {total_claims} "
-            f"total claims ({ind_claims} independent, {dep_claims} dependent). "
-            f"Claims are drafted in USPTO format with proper preamble, transition, "
-            f"and body element structure."
-        )
-
-        # Build recommended filing order (sorted by novelty score descending)
-        filing_order = sorted(
-            claim_sets,
-            key=lambda cs: cs.novelty_score,
-            reverse=True,
-        )
-
-        return {
-            "session_id": session_id,
-            "total_claim_sets": len(claim_sets),
-            "total_claims": total_claims,
-            "claim_sets": [
-                {
-                    "opportunity_id": cs.opportunity_id,
-                    "claim_text_original": cs.claim_text_original[:150],
-                    "novelty_score": cs.novelty_score,
-                    "recommended_scope": cs.recommended_scope,
-                    "claim_count": len(cs.claims),
-                    "claims_preview": cs.claims[0].claim_text if cs.claims else "",
-                    "ipc_codes": cs.ipc_codes,
-                    "distinguishing_features": cs.distinguishing_features,
-                }
-                for cs in claim_sets
-            ],
-            "drafting_summary": drafting_summary,
-            "recommended_filing_order": [
-                cs.opportunity_id for cs in filing_order
-            ],
-            "disclaimer": (
-                "DISCLAIMER: These claims were generated by an AI system and have not "
-                "been reviewed by a licensed patent attorney. They are provided for "
-                "informational purposes only and do not constitute legal advice."
+    return {
+        "session_id": session_id,
+        "total_opportunities": len(opp_data),
+        "opportunities": opp_data,
+        "ai_instructions": {
+            "task": "draft_patent_claims",
+            "description": (
+                "Draft USPTO-format patent claims for each whitespace "
+                "opportunity below. Then call save_drafted_claims with the results."
             ),
-            "next_step": "Call export_report to download the full PDF analysis",
-        }
+            "save_tool": "save_drafted_claims",
+            "save_args": {
+                "session_id": session_id,
+                "claim_sets": "list of claim set dicts (see schema below)",
+            },
+            "claim_set_schema": {
+                "opportunity_id": "UUID from the opportunities above",
+                "claim_text_original": "The original claim text from the paper",
+                "novelty_score": "The novelty score from the opportunity",
+                "recommended_scope": "broad | medium | narrow",
+                "claims": [
+                    {
+                        "claim_number": "integer starting at 1",
+                        "claim_text": "Full formatted claim text with proper USPTO structure",
+                        "claim_type": "independent | dependent",
+                        "depends_on": "claim number this depends on, null for independent",
+                        "patent_claim_category": "method | system | composition",
+                    }
+                ],
+                "drafting_rationale": "2-3 sentences explaining scope decisions",
+                "distinguishing_features": ["feature 1 not in prior art", "feature 2"],
+                "ipc_codes": "relevant IPC codes",
+            },
+            "uspto_rules": {
+                "independent_claim": {
+                    "preamble": "A method for [X] / A system comprising / An apparatus for [X]",
+                    "transition": "comprising (always open-ended)",
+                    "body": "each element on its own line; ended with semicolon except last (period)",
+                },
+                "dependent_claim": "The [category] of claim [N], wherein [LIMITATION].",
+                "antecedent_basis": "First mention: 'a processor', subsequent: 'the processor'",
+                "scope_guidelines": {
+                    "broad": "1 independent + 2 dependent claims",
+                    "medium": "1 independent + 3 dependent claims",
+                    "narrow": "1 independent + 4 dependent claims",
+                },
+            },
+            "rules": [
+                "Independent claim must NOT read on any cited prior art",
+                "Add distinguishing elements from nearest patents",
+                "Use functional language: 'configured to', 'adapted to', 'operable to'",
+                "Each body element on its own line ending with semicolon (last ends with period)",
+                "Use 'comprising' as transition word for all independent claims",
+            ],
+        },
+        "disclaimer": (
+            "DISCLAIMER: Claims drafted by AI have not been reviewed by a "
+            "licensed patent attorney. Consult a registered patent practitioner "
+            "before filing any patent application."
+        ),
+        "next_step": (
+            "Draft USPTO patent claims for each opportunity using the instructions, "
+            f"then call save_drafted_claims with session_id='{session_id}'"
+        ),
+    }
