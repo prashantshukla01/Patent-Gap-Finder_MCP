@@ -1,0 +1,34 @@
+# Celery worker Dockerfile for Patent Gap Finder
+# Shares the same build stage as the main Dockerfile
+
+# ── Stage 1: Builder ──────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml uv.lock* ./
+RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
+
+# ── Stage 2: Runtime ─────────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN adduser --disabled-password --gecos "" appuser
+
+COPY --from=builder /app/.venv /app/.venv
+COPY src/ src/
+
+RUN chown -R appuser:appuser /app
+USER appuser
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src"
+ENV PYTHONUNBUFFERED=1
+
+CMD ["celery", "-A", "patent_gap_finder.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
