@@ -3,14 +3,15 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python -m patent_gap_finder.server"
+# Run alembic migrations then start server
+# Railway injects $PORT — server reads it via MCP_PORT env var
+startCommand = "alembic upgrade head && python -m patent_gap_finder.server"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "on-failure"
 restartPolicyMaxRetries = 3
 
 [deploy.envVars]
 MCP_TRANSPORT = "streamable-http"
-MCP_PORT = { fromService = "", envVariable = "PORT" }
 PYTHONPATH = "/app/src"
 PYTHONUNBUFFERED = "1"
