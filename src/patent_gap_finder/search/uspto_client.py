@@ -1,7 +1,19 @@
-"""Async USPTO PatentsView API client.
+"""Async Lens.org patent search client (replaces defunct PatentsView API).
 
-Base URL: https://search.patentsview.org/api/v1/patent/
-Free tier: 45 req/min (no key).  With optional USPTO_API_KEY: higher limits.
+The original USPTO PatentsView API (search.patentsview.org) was permanently
+shut down on March 20, 2026 and migrated to data.uspto.gov, which does not
+yet provide a stable programmatic search endpoint.
+
+Lens.org provides equivalent global patent coverage (USPTO + EPO + PCT) with:
+  - Free tier: 10,000 requests/month (no key required for basic search)
+  - Authenticated tier: higher limits via LENS_API_KEY in .env
+  - IPC/CPC classification filtering
+  - Full-text search on title + abstract
+
+Output dicts are shaped to match the existing normalize_uspto() expectations:
+  patent_number, patent_title, patent_abstract, patent_date,
+  inventor_first_name, inventor_last_name, assignee_organization,
+  ipc_code, cpc_code
 """
 
 from __future__ import annotations
@@ -19,68 +31,135 @@ logger = logging.getLogger(__name__)
 
 
 class USPTOTimeoutError(Exception):
-    """USPTO API timed out after retries."""
+    """Lens.org API timed out after retries."""
 
 
 class USPTOAPIError(Exception):
-    """Non-retryable USPTO API error."""
+    """Non-retryable Lens.org API error."""
 
 
 # ── Client ───────────────────────────────────────────────────────────
 
-BASE_URL = "https://search.patentsview.org/api/v1/patent/"
+BASE_URL = "https://api.lens.org/patent/search"
 
-# Rate limit: 45 req/min → 1 concurrent + 1.4s gap
-_semaphore = asyncio.Semaphore(1)
-
-FIELDS = [
-    "patent_id",
-    "patent_title",
-    "patent_abstract",
-    "patent_date",
-    "patent_number",
-    "assignee_organization",
-    "ipc_code",
-    "cpc_code",
-    "inventor_last_name",
-    "inventor_first_name",
-]
+# Lens.org rate limit: 10 req/s authenticated, ~2 req/s anonymous
+_semaphore = asyncio.Semaphore(2)
 
 
 def _build_query(keywords: list[str], ipc_codes: list[str]) -> dict:
-    """Build a PatentsView query combining keyword + IPC filters.
+    """Build a Lens.org patent search query.
 
     Args:
-        keywords: Search terms for abstract text search.
-        ipc_codes: IPC codes to filter (prefix match).
+        keywords: Search terms for title/abstract text search.
+        ipc_codes: IPC classification codes (e.g. 'G06N', 'G06N 3/08').
 
     Returns:
-        PatentsView query dict.
+        Lens.org query dict (Elasticsearch query DSL).
     """
-    conditions = []
+    must_clauses = []
 
     if keywords:
         keyword_text = " ".join(keywords[:10])
-        conditions.append(
-            {"_text_any": {"patent_abstract": keyword_text}}
-        )
+        must_clauses.append({
+            "query_string": {
+                "query": keyword_text,
+                "fields": ["title", "abstract"],
+                "default_operator": "OR",
+            }
+        })
 
     if ipc_codes:
         # Extract section+class prefix (e.g. "G06N 3/08" → "G06N")
         ipc_prefixes = list({code.split()[0] for code in ipc_codes if code.strip()})
         if len(ipc_prefixes) == 1:
-            conditions.append({"_eq": {"ipc_code": ipc_prefixes[0]}})
+            must_clauses.append({
+                "term": {"classifications_ipcr.symbol": ipc_prefixes[0]}
+            })
         elif ipc_prefixes:
-            conditions.append(
-                {"_or": [{"_eq": {"ipc_code": p}} for p in ipc_prefixes]}
-            )
+            must_clauses.append({
+                "bool": {
+                    "should": [
+                        {"prefix": {"classifications_ipcr.symbol": p}}
+                        for p in ipc_prefixes
+                    ],
+                    "minimum_should_match": 1,
+                }
+            })
 
-    if not conditions:
+    if not must_clauses:
         raise ValueError("At least one of keywords or ipc_codes must be provided")
 
-    if len(conditions) == 1:
-        return conditions[0]
-    return {"_and": conditions}
+    if len(must_clauses) == 1:
+        return must_clauses[0]
+    return {"bool": {"must": must_clauses}}
+
+
+def _map_to_patentsview_shape(hit: dict) -> dict:
+    """Map a Lens.org patent record to the shape normalize_uspto() expects.
+
+    normalize_uspto() reads these fields:
+      patent_number, patent_title, patent_abstract, patent_date,
+      inventor_first_name (list), inventor_last_name (list),
+      assignee_organization, ipc_code (list), cpc_code (list)
+    """
+    # Patent number: prefer US number, fall back to lens_id
+    lens_id = hit.get("lens_id", "")
+    pub_refs = hit.get("publication_references", [])
+    patent_number = lens_id  # fallback
+    for ref in pub_refs:
+        if ref.get("jurisdiction") == "US":
+            patent_number = ref.get("doc_number", lens_id)
+            break
+
+    # Inventors
+    inventor_first: list[str] = []
+    inventor_last: list[str] = []
+    for inv in hit.get("inventors", []):
+        name = inv.get("name", "")
+        parts = name.rsplit(" ", 1)
+        if len(parts) == 2:
+            inventor_first.append(parts[0])
+            inventor_last.append(parts[1])
+        elif parts:
+            inventor_first.append("")
+            inventor_last.append(parts[0])
+
+    # Assignees
+    assignees = hit.get("assignees", [])
+    assignee_org = assignees[0].get("name", "") if assignees else ""
+
+    # IPC codes
+    ipc_codes = []
+    for cls in hit.get("classifications_ipcr", []):
+        sym = cls.get("symbol", "").strip()
+        if sym:
+            ipc_codes.append(sym)
+
+    # CPC codes
+    cpc_codes = []
+    for cls in hit.get("classifications_cpc", []):
+        sym = cls.get("symbol", "").strip()
+        if sym:
+            cpc_codes.append(sym)
+
+    # Publication date: prefer granted date, fall back to published date
+    pub_date = (
+        hit.get("date_published")
+        or hit.get("publication_type", {}).get("date_published")
+        or ""
+    )
+
+    return {
+        "patent_number": patent_number,
+        "patent_title": hit.get("title", ""),
+        "patent_abstract": hit.get("abstract", ""),
+        "patent_date": pub_date[:10] if pub_date else "",  # YYYY-MM-DD
+        "inventor_first_name": inventor_first,
+        "inventor_last_name": inventor_last,
+        "assignee_organization": assignee_org,
+        "ipc_code": ipc_codes,
+        "cpc_code": cpc_codes,
+    }
 
 
 async def search(
@@ -88,76 +167,107 @@ async def search(
     ipc_codes: list[str],
     max_results: int = 100,
 ) -> list[dict]:
-    """Search USPTO PatentsView for patents matching keywords + IPC codes.
+    """Search Lens.org for patents matching keywords + IPC codes.
 
-    Automatically paginates up to *max_results* patents.  Respects the
-    45 req/min rate limit via a semaphore + sleep.
+    Requires a free Lens.org API key:
+      1. Register at https://www.lens.org/lens/user/apikey
+      2. Add LENS_API_KEY=<your-key> to .env
+
+    Automatically paginates up to *max_results* patents.
 
     Args:
-        keywords: Search terms for abstract text search.
+        keywords: Search terms for title/abstract text search.
         ipc_codes: IPC classification codes.
         max_results: Maximum number of patents to return.
 
     Returns:
-        List of raw patent dicts from the API.
+        List of raw patent dicts (shaped like PatentsView output).
+        Returns empty list when no API key is configured.
 
     Raises:
         USPTOTimeoutError: On connection timeout after retries.
         USPTOAPIError: On non-retryable server errors.
     """
+    api_key = os.environ.get("LENS_API_KEY") or os.environ.get("USPTO_API_KEY", "")
+    if not api_key:
+        logger.warning(
+            "LENS_API_KEY not set — skipping Lens.org (USPTO) search. "
+            "Register free at https://www.lens.org/lens/user/apikey and add "
+            "LENS_API_KEY to .env. EPO + SerpAPI will cover this gap."
+        )
+        return []
+
     query = _build_query(keywords, ipc_codes)
-    api_key = os.environ.get("USPTO_API_KEY")
 
     all_patents: list[dict] = []
-    page = 1
-    per_page = min(50, max_results)
+    page_size = min(50, max_results)
+    from_offset = 0
 
-    headers = {}
+    headers: dict[str, str] = {"Content-Type": "application/json"}
     if api_key:
-        headers["X-Api-Key"] = api_key
+        headers["Authorization"] = f"Bearer {api_key}"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(60.0, connect=10.0)
+    ) as client:
         while len(all_patents) < max_results:
             body = {
-                "q": query,
-                "f": FIELDS,
-                "o": {"per_page": per_page, "page": page},
-                "s": [{"patent_date": "desc"}],
+                "query": query,
+                "size": page_size,
+                "from": from_offset,
+                "sort": [{"date_published": "desc"}],
+                "include": [
+                    "lens_id",
+                    "title",
+                    "abstract",
+                    "date_published",
+                    "inventors",
+                    "assignees",
+                    "classifications_ipcr",
+                    "classifications_cpc",
+                    "publication_references",
+                ],
             }
 
             async with _semaphore:
                 try:
                     response = await _make_request(client, body, headers)
                 except USPTOTimeoutError:
-                    if page == 1:
+                    if from_offset == 0:
                         raise
-                    logger.warning("USPTO timeout on page %d, returning partial results", page)
+                    logger.warning(
+                        "Lens.org timeout at offset %d, returning partial results",
+                        from_offset,
+                    )
                     break
 
-                # Enforce rate limit gap
-                await asyncio.sleep(1.4)
+                # Rate-limit gap (anonymous: ~0.5 req/s)
+                await asyncio.sleep(0.5 if api_key else 1.5)
 
             data = response.json()
+            hits = data.get("data", [])
+            total = data.get("total", {})
+            total_count = total.get("value", 0) if isinstance(total, dict) else int(total or 0)
 
-            patents = data.get("patents", [])
-            total_count = data.get("total_patent_count", 0)
-
-            if not patents:
+            if not hits:
                 break
 
-            all_patents.extend(patents)
+            mapped = [_map_to_patentsview_shape(h) for h in hits]
+            all_patents.extend(mapped)
+
             logger.info(
-                "USPTO page %d: %d patents (total available: %d)",
-                page, len(patents), total_count,
+                "Lens.org offset %d: %d patents (total available: %d)",
+                from_offset,
+                len(hits),
+                total_count,
             )
 
-            # Stop conditions
             if len(all_patents) >= max_results:
                 break
-            if page * per_page >= total_count:
+            if from_offset + page_size >= total_count:
                 break
 
-            page += 1
+            from_offset += page_size
 
     return all_patents[:max_results]
 
@@ -168,7 +278,7 @@ async def _make_request(
     headers: dict,
     retries: int = 2,
 ) -> httpx.Response:
-    """Make a single USPTO request with retry logic.
+    """Make a single Lens.org request with retry logic.
 
     Retries on 429 (rate limit) with 60s wait and on 5xx with backoff.
 
@@ -186,33 +296,47 @@ async def _make_request(
             if response.status_code == 429:
                 if attempt < retries:
                     logger.warning(
-                        "USPTO 429 rate limited, waiting 60s (attempt %d/%d)",
+                        "Lens.org 429 rate limited, waiting 60s (attempt %d/%d)",
                         attempt + 1, retries + 1,
                     )
                     await asyncio.sleep(60)
                     continue
-                raise USPTOAPIError(f"USPTO rate limited after {retries + 1} attempts")
+                raise USPTOAPIError(
+                    f"Lens.org rate limited after {retries + 1} attempts"
+                )
+
+            if response.status_code == 401:
+                # Anonymous access may be restricted — log and raise
+                raise USPTOAPIError(
+                    "Lens.org requires authentication. "
+                    "Set LENS_API_KEY from https://www.lens.org/lens/user/apikey"
+                )
 
             if response.status_code >= 500:
                 if attempt < retries:
                     wait = 5 * (attempt + 1)
                     logger.warning(
-                        "USPTO %d error, retrying in %ds",
+                        "Lens.org %d error, retrying in %ds",
                         response.status_code, wait,
                     )
                     await asyncio.sleep(wait)
                     continue
                 raise USPTOAPIError(
-                    f"USPTO server error {response.status_code}: {response.text[:200]}"
+                    f"Lens.org server error {response.status_code}: {response.text[:200]}"
                 )
 
             raise USPTOAPIError(
-                f"USPTO error {response.status_code}: {response.text[:200]}"
+                f"Lens.org error {response.status_code}: {response.text[:200]}"
             )
 
         except httpx.TimeoutException as e:
             if attempt < retries:
-                logger.warning("USPTO timeout, retrying (attempt %d/%d)", attempt + 1, retries + 1)
+                logger.warning(
+                    "Lens.org timeout, retrying (attempt %d/%d)",
+                    attempt + 1, retries + 1,
+                )
                 await asyncio.sleep(5)
                 continue
-            raise USPTOTimeoutError(f"USPTO timed out after {retries + 1} attempts") from e
+            raise USPTOTimeoutError(
+                f"Lens.org timed out after {retries + 1} attempts"
+            ) from e

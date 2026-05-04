@@ -135,13 +135,13 @@ async def coordinate_search(
     serpapi_patents: list[Patent] = []
     total_so_far = len(uspto_patents) + len(epo_patents)
 
-    if total_so_far < 30 and serpapi_mod.is_available():
+    if total_so_far < 50 and serpapi_mod.is_available():
         logger.info(
             "Total so far: %d (< 30) — triggering SerpAPI fallback",
             total_so_far,
         )
         try:
-            raw_serpapi = await serpapi_mod.search(keywords, max_results=20)
+            raw_serpapi = await serpapi_mod.search(keywords, max_results=50)
             serpapi_patents = [normalize_serpapi(p) for p in raw_serpapi]
             cache_hits["google_patents"] = False
         except Exception as e:
