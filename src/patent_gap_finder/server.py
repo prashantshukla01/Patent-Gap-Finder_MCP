@@ -529,45 +529,38 @@ async def health_http_endpoint(request: Request) -> StarletteJSONResponse:
 
 @mcp.resource("patent://usage")
 def usage_stats() -> dict:
-    """Gemini API usage statistics for the current server session."""
-    try:
-        from patent_gap_finder.ai.gemini_client import get_gemini_client
-        client = get_gemini_client()
-        return {
-            "total_requests": client.total_requests,
-            "total_prompt_chars": client.total_prompt_chars,
-            "total_response_chars": client.total_response_chars,
-            "model": "gemini-1.5-flash",
-        }
-    except Exception:
-        return {
-            "total_requests": 0,
-            "total_prompt_chars": 0,
-            "total_response_chars": 0,
-            "note": "Gemini client not initialized (GEMINI_API_KEY may not be set)",
-        }
+    """Server info — no AI API keys required.
+
+    This server uses the host LLM (Claude Desktop) for all reasoning.
+    No API keys are needed on the server side.
+    """
+    return {
+        "architecture": "instruct-then-save",
+        "ai_model": "host LLM (Claude Desktop)",
+        "server_role": "data + compute engine (parsing, DB, embeddings, clustering)",
+        "note": "All AI reasoning is performed by the host LLM. No API key required.",
+        "tools": [
+            "parse_paper", "save_claims", "classify_ipc", "save_classification",
+            "search_prior_art", "get_search_status", "map_landscape",
+            "find_whitespace", "save_whitespace", "draft_claims",
+            "save_drafted_claims", "export_report", "get_session",
+        ],
+    }
 
 
 @mcp.resource("patent://quota-status")
 def quota_status() -> dict:
-    """Estimated remaining daily Gemini free-tier quota."""
-    daily_limit = 1500
-    try:
-        from patent_gap_finder.ai.gemini_client import get_gemini_client
-        client = get_gemini_client()
-        used = client.total_requests
-        return {
-            "daily_limit": daily_limit,
-            "used_this_session": used,
-            "estimated_remaining": max(0, daily_limit - used),
-        }
-    except Exception:
-        return {
-            "daily_limit": daily_limit,
-            "used_this_session": 0,
-            "estimated_remaining": daily_limit,
-            "note": "Gemini client not initialized.",
-        }
+    """API quota status — no quota limits apply.
+
+    This server does not make any AI API calls.
+    Rate limits only apply to EPO (2000 req/day) and SerpAPI (100/month free).
+    """
+    return {
+        "ai_api": "none — host LLM handles all reasoning",
+        "epo_daily_limit": 2000,
+        "serpapi_monthly_limit": 100,
+        "lens_org": "unlimited with LENS_API_KEY, skipped without it",
+    }
 
 
 @mcp.resource("patent://cache-stats")
