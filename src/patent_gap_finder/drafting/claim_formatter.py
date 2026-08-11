@@ -27,6 +27,7 @@ COMMON_EXCEPTIONS = {
     "apparatus",
     "step",
     "steps",
+    "element",
     "present disclosure",
     "embodiment",
     "invention",
@@ -79,12 +80,12 @@ def format_claim_set(raw_claims: list[DraftedClaim]) -> str:
         if claim.claim_type == "dependent" and claim.depends_on is not None:
             category = claim.patent_claim_category or "method"
             expected_prefix = f"The {category} of claim {claim.depends_on}"
-            if not claim_text.startswith(expected_prefix) and not claim_text.startswith(f"{claim.claim_number}."):
+            if not claim_text.lower().startswith(expected_prefix.lower()) and not claim_text.startswith(f"{claim.claim_number}."):
                 # Check if it starts with a number
                 number_prefix = re.match(r"^\d+\.\s*", claim_text)
                 if number_prefix:
                     claim_text = claim_text[number_prefix.end():]
-                if not claim_text.startswith("The "):
+                if not claim_text.lower().startswith("the "):
                     claim_text = f"{expected_prefix}, wherein {claim_text}"
 
         # Remove leading claim number if Gemini included one
