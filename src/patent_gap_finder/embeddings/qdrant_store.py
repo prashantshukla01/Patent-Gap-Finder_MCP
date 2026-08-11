@@ -31,8 +31,9 @@ def get_qdrant_client():
         try:
             from qdrant_client import AsyncQdrantClient
             url = os.environ.get("QDRANT_URL", QDRANT_URL_DEFAULT)
-            _client_instance = AsyncQdrantClient(url=url)
-            logger.info("Qdrant client created: %s", url)
+            api_key = os.environ.get("QDRANT_API_KEY", None) or None
+            _client_instance = AsyncQdrantClient(url=url, api_key=api_key)
+            logger.info("Qdrant client created: %s (auth=%s)", url, bool(api_key))
         except Exception as e:
             raise QdrantUnavailableError(
                 f"Cannot connect to Qdrant at "
