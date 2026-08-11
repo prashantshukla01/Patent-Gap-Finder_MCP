@@ -135,7 +135,7 @@ async def coordinate_search(
     serpapi_patents: list[Patent] = []
     total_so_far = len(uspto_patents) + len(epo_patents)
 
-    if total_so_far < 50 and serpapi_mod.is_available():
+    if total_so_far < 30 and serpapi_mod.is_available():
         logger.info(
             "Total so far: %d (< 30) — triggering SerpAPI fallback",
             total_so_far,
@@ -230,4 +230,6 @@ async def _persist_results(
         })
 
         # Update session
-        await session_repo.update_session_status(db, session_id, "search_complete")
+        await session_repo.mark_patent_search_complete(
+            db, session_id, result.total_found
+        )
