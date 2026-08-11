@@ -110,20 +110,39 @@ async def init_db() -> None:
             from alembic import command
 
             alembic_cfg = Config("alembic.ini")
-            # Override URL from environment
+            # Override URL from environment (escape % for ConfigParser)
             alembic_cfg.set_main_option(
                 "sqlalchemy.url",
-                url.replace("+asyncpg", "+psycopg2"),
+                url.replace("+asyncpg", "+psycopg2").replace("%", "%%"),
             )
             await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
             logger.info("Alembic migrations applied successfully")
         except Exception as e:
             logger.warning("Alembic migration failed, falling back to create_all: %s", e)
-            from patent_gap_finder.db.models import Base
-            engine = _get_engine()
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables created via create_all fallback")
+            try:
+                from patent_gap_finder.db.models import Base
+                engine = _get_engine()
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                logger.info("Database tables created via create_all fallback")
+            except Exception as e2:
+                logger.warning(
+                    "PostgreSQL unreachable (%s) — falling back to SQLite patent_gap_finder.db", e2
+                )
+                global _engine, _session_factory
+                if _engine is not None:
+                    await _engine.dispose()
+                sqlite_url = "sqlite+aiosqlite:///patent_gap_finder.db"
+                _engine = create_async_engine(sqlite_url, echo=False)
+                _session_factory = async_sessionmaker(
+                    bind=_engine,
+                    class_=AsyncSession,
+                    expire_on_commit=False,
+                )
+                from patent_gap_finder.db.models import Base
+                async with _engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                logger.info("Database initialized with SQLite fallback")
     else:
         # SQLite or other — use create_all directly
         from patent_gap_finder.db.models import Base

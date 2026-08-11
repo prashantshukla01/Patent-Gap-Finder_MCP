@@ -93,7 +93,28 @@ async def update_session_status(
         .where(AnalysisSession.id == session_id)
         .values(**values)
     )
+    await db.flush()
     logger.info("Session %s status → %s", session_id, status)
+
+
+async def mark_patent_search_complete(
+    db: AsyncSession,
+    session_id: str,
+    total_patents: int,
+) -> None:
+    """Mark Phase 3 patent search as complete for a session."""
+    await db.execute(
+        update(AnalysisSession)
+        .where(AnalysisSession.id == session_id)
+        .values(
+            patent_search_complete=True,
+            total_patents_found=total_patents,
+            status="search_complete",
+            updated_at=datetime.now(timezone.utc),
+        )
+    )
+    await db.flush()
+    logger.info("Session %s marked patent_search_complete=True (%d patents)", session_id, total_patents)
 
 
 async def update_session_results(

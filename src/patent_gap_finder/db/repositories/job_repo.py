@@ -44,6 +44,7 @@ async def update_job_celery_id(
         .where(SearchJob.id == job_id)
         .values(celery_task_id=celery_task_id)
     )
+    await db.flush()
 
 
 async def update_job_status(
@@ -62,6 +63,7 @@ async def update_job_status(
     await db.execute(
         update(SearchJob).where(SearchJob.id == job_id).values(**values)
     )
+    await db.flush()
 
 
 async def update_job_results(
@@ -82,6 +84,7 @@ async def update_job_results(
     await db.execute(
         update(SearchJob).where(SearchJob.id == job_id).values(**values)
     )
+    await db.flush()
 
 
 async def get_job(
