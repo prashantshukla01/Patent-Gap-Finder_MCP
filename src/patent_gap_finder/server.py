@@ -622,7 +622,7 @@ def main() -> None:
     """Run the MCP server."""
     transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
     host = os.getenv("MCP_HOST", "0.0.0.0")
-    port = int(os.getenv("MCP_PORT", "8000"))
+    port = int(os.getenv("PORT") or os.getenv("MCP_PORT") or "8000")
 
     logger.info(
         "Starting Patent Gap Finder MCP server v1.0.0 (transport=%s)", transport

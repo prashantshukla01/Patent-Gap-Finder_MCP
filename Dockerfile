@@ -40,10 +40,11 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application source
 COPY src/ src/
+COPY scripts/ scripts/
 COPY alembic.ini .
 
-# Set ownership
-RUN chown -R appuser:appuser /app
+# Set ownership and permissions
+RUN chmod +x /app/scripts/*.sh && chown -R appuser:appuser /app
 USER appuser
 
 # Environment
@@ -55,6 +56,6 @@ ENV MCP_TRANSPORT=streamable-http
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -sf http://localhost:8000/health || exit 1
+    CMD curl -sf http://localhost:${PORT:-8000}/health || exit 1
 
 CMD ["python", "-m", "patent_gap_finder.server"]
