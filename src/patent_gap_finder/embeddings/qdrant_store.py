@@ -147,21 +147,39 @@ async def search_similar(
 
     client = get_qdrant_client()
     try:
-        results = await client.search(
-            collection_name=COLLECTION_NAME,
-            query_vector=query_vector.tolist(),
-            limit=k,
-            score_threshold=score_threshold,
-            with_payload=True,
-            query_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="session_ids",
-                        match=MatchValue(value=str(session_id)),
-                    )
-                ]
-            ),
-        )
+        if hasattr(client, "search"):
+            results = await client.search(
+                collection_name=COLLECTION_NAME,
+                query_vector=query_vector.tolist(),
+                limit=k,
+                score_threshold=score_threshold,
+                with_payload=True,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="session_ids",
+                            match=MatchValue(value=str(session_id)),
+                        )
+                    ]
+                ),
+            )
+        else:
+            res = await client.query_points(
+                collection_name=COLLECTION_NAME,
+                query=query_vector.tolist(),
+                limit=k,
+                score_threshold=score_threshold,
+                with_payload=True,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="session_ids",
+                            match=MatchValue(value=str(session_id)),
+                        )
+                    ]
+                ),
+            )
+            results = res.points
         return results
     except Exception as e:
         logger.warning("Qdrant search failed: %s", e)

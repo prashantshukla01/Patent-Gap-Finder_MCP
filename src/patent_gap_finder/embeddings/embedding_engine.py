@@ -43,7 +43,10 @@ def get_embedding_model():
     if _model_instance is None:
         try:
             from sentence_transformers import SentenceTransformer
-            _model_instance = SentenceTransformer(MODEL_NAME)
+            try:
+                _model_instance = SentenceTransformer(MODEL_NAME, local_files_only=True)
+            except Exception:
+                _model_instance = SentenceTransformer(MODEL_NAME)
             logger.info("Loaded embedding model: %s", MODEL_NAME)
         except Exception as e:
             raise EmbeddingModelLoadError(
