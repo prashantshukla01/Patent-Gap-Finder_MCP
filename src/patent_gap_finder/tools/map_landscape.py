@@ -63,10 +63,18 @@ async def map_landscape(session_id: str) -> dict:
 
         # Check Phase 3 completion
         if not session.patent_search_complete:
-            return {
-                "error": "PHASE3_INCOMPLETE",
-                "message": "Patent search not complete. Run search_prior_art first.",
-            }
+            # Auto-heal: Check if a completed search job exists
+            from patent_gap_finder.db.repositories import job_repo
+            latest_job = await job_repo.get_latest_job_for_session(db, session_id)
+            if latest_job and latest_job.status == "complete":
+                session.patent_search_complete = True
+                session.total_patents_found = latest_job.result_count or 0
+                await db.flush()
+            else:
+                return {
+                    "error": "PHASE3_INCOMPLETE",
+                    "message": "Patent search not complete. Run search_prior_art first.",
+                }
 
         # Check for existing complete landscape
         existing = await landscape_repo.get_latest_landscape_job(db, session_id)

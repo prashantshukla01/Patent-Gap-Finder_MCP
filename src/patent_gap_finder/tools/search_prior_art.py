@@ -72,15 +72,20 @@ async def search_prior_art(session_id: str) -> dict:
                 db, session_id
             )
             if existing_job and existing_job.status == "complete":
+                if not session.patent_search_complete:
+                    session.patent_search_complete = True
+                    session.total_patents_found = existing_job.result_count or 0
+                    await db.flush()
                 return {
-                    "error": "JOB_ALREADY_EXISTS",
+                    "status": "complete",
                     "message": (
                         "Search already completed for this session. "
-                        "Use get_session or get_search_status for results."
+                        "Proceed to map_landscape to cluster the patent landscape."
                     ),
                     "session_id": session_id,
                     "job_id": existing_job.id,
                     "result_count": existing_job.result_count,
+                    "next_step": "Call map_landscape to cluster the patent landscape",
                 }
 
             if existing_job and existing_job.status in ("pending", "running"):
@@ -108,7 +113,14 @@ async def search_prior_art(session_id: str) -> dict:
 
         # Dispatch Celery task (sync call, safe from async context)
         try:
+            from patent_gap_finder.workers.celery_app import celery_app
             from patent_gap_finder.workers.search_tasks import run_patent_search
+
+            inspector = celery_app.control.inspect(timeout=1.0)
+            ping_resp = inspector.ping() if inspector else None
+            if not ping_resp:
+                raise RuntimeError("No active Celery worker listening")
+
             task = run_patent_search.delay(
                 session_id=session_id,
                 job_id=job_id,
@@ -121,21 +133,28 @@ async def search_prior_art(session_id: str) -> dict:
                 await job_repo.update_job_celery_id(db, job_id, task.id)
 
         except Exception as e:
-            logger.error("Failed to dispatch Celery task: %s", e)
-            async with get_db_session() as db:
-                await job_repo.update_job_status(
-                    db, job_id, "failed",
-                    error=f"Celery unavailable: {e}",
-                )
-            return {
-                "error": "CELERY_UNAVAILABLE",
-                "message": (
-                    f"Cannot dispatch search task: {e}. "
-                    "Ensure Redis is running and Celery worker is started."
-                ),
-                "session_id": session_id,
-                "job_id": job_id,
-            }
+            logger.info("Celery/Redis unavailable (%s) — launching in-process search task fallback", e)
+            import asyncio
+            from patent_gap_finder.search.search_coordinator import coordinate_search
+
+            async def _run_search_fallback():
+                try:
+                    async with get_db_session() as db_inner:
+                        await job_repo.update_job_status(db_inner, job_id, "running")
+                    await coordinate_search(
+                        keywords=keywords,
+                        ipc_codes=ipc_codes,
+                        session_id=session_id,
+                        job_id=job_id,
+                    )
+                except Exception as ex:
+                    logger.error("Fallback search failed for job %s: %s", job_id, ex)
+                    async with get_db_session() as db_inner:
+                        await job_repo.update_job_status(
+                            db_inner, job_id, "failed", error=str(ex)
+                        )
+
+            asyncio.create_task(_run_search_fallback())
 
         return {
             "job_id": job_id,

@@ -217,6 +217,11 @@ async def find_whitespace(
                     "Recommend 'broad' scope if very novel, 'narrow' if marginal",
                     "Suggest IPC codes based on claim content",
                 ],
+                "output_format_template": {
+                    "section_1": "1. Overall Patentability Verdict & Success Probability (%) — High/Moderate/Low verdict, XX% success probability, and Executive Summary",
+                    "section_2": "2. What claims make it unpatentable — Specific claims with 35 U.S.C. §101/102/103 abstract idea or obviousness risks and prior art overlaps",
+                    "section_3": "3. How can someone make it patentable — Strategic reframing, algorithmic/mathematical pivots, and structural limitations",
+                },
             },
             "next_step": (
                 "Assess the novelty of each whitespace opportunity, "

@@ -101,19 +101,21 @@ logger = logging.getLogger("patent_gap_finder")
 @asynccontextmanager
 async def lifespan(server):
     """Server lifespan handler — initializes and tears down services."""
+    import asyncio
+
     # Database
     try:
         from patent_gap_finder.db.connection import init_db
-        await init_db()
+        await asyncio.wait_for(init_db(), timeout=2.0)
         logger.info("Database initialized")
     except Exception as e:
-        logger.warning("Database init skipped (not configured): %s", e)
+        logger.warning("Database init skipped (not configured or offline): %s", e)
 
     # Redis
     try:
         from patent_gap_finder.cache.redis_client import get_redis_client
         redis = get_redis_client()
-        stats = await redis.get_cache_stats()
+        stats = await asyncio.wait_for(redis.get_cache_stats(), timeout=1.0)
         logger.info("Redis connected: %s", stats)
     except Exception as e:
         logger.warning("Redis init skipped: %s", e)
@@ -121,7 +123,7 @@ async def lifespan(server):
     # Qdrant
     try:
         from patent_gap_finder.embeddings.qdrant_store import ensure_collection_exists
-        await ensure_collection_exists()
+        await asyncio.wait_for(ensure_collection_exists(), timeout=1.0)
         logger.info("Qdrant collection ready")
     except Exception as e:
         logger.warning("Qdrant init skipped: %s", e)

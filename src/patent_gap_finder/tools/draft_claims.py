@@ -178,6 +178,11 @@ async def draft_claims(
                 "Each body element on its own line ending with semicolon (last ends with period)",
                 "Use 'comprising' as transition word for all independent claims",
             ],
+            "output_format_template": {
+                "section_1": "1. Overall Patentability Verdict & Success Probability (%) — High/Moderate/Low verdict, XX% success probability, and Executive Summary",
+                "section_2": "2. What claims make it unpatentable — Specific claims with 35 U.S.C. §101/102/103 abstract idea or obviousness risks and prior art overlaps",
+                "section_3": "3. How can someone make it patentable — Strategic reframing, algorithmic/mathematical pivots, and structural limitations",
+            },
         },
         "disclaimer": (
             "DISCLAIMER: Claims drafted by AI have not been reviewed by a "
