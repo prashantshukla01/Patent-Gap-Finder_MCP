@@ -103,82 +103,20 @@ class TestClassifyIPCTool:
 
     @pytest.mark.asyncio
     async def test_happy_path(self) -> None:
-        """Full happy path: session found, AI claims exist, classification runs."""
+        """Full happy path: session found, AI claims exist, returns ai_instructions."""
         session_id = await _create_session_with_ai_claims()
-
-        mock_response = IPCClassificationResponse(
-            mappings=[
-                ClaimIPCMapping(
-                    claim_text="A method for training neural networks...",
-                    primary_ipc="G06N 3/08",
-                    secondary_ipc=["G06N 3/04"],
-                    cpc_code="G06N 3/08",
-                    confidence=0.9,
-                    rationale="Neural network training",
-                    is_valid_ipc=True,
-                ),
-            ],
-            top_ipc_codes=["G06N 3/08"],
-            search_keywords=["neural network"] * 10,
-            classification_summary="ML classification.",
-        )
-
-        with patch(
-            "patent_gap_finder.tools.classify_ipc.get_gemini_client"
-        ) as mock_get_client, patch(
-            "patent_gap_finder.tools.classify_ipc._classify",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
-            mock_client = MagicMock()
-            mock_get_client.return_value = mock_client
-
-            result = await classify_ipc(session_id)
+        result = await classify_ipc(session_id)
 
         assert "error" not in result
         assert result["session_id"] == session_id
-        assert len(result["mappings"]) == 1
-        assert result["top_ipc_codes"] == ["G06N 3/08"]
-
-    @pytest.mark.asyncio
-    async def test_gemini_quota_exhausted(self) -> None:
-        """Should return GEMINI_QUOTA_EXHAUSTED on quota error."""
-        from patent_gap_finder.ai.gemini_client import GeminiDailyQuotaError
-
-        session_id = await _create_session_with_ai_claims()
-
-        with patch(
-            "patent_gap_finder.tools.classify_ipc.get_gemini_client"
-        ) as mock_get_client, patch(
-            "patent_gap_finder.tools.classify_ipc._classify",
-            new_callable=AsyncMock,
-            side_effect=GeminiDailyQuotaError("quota exhausted"),
-        ):
-            mock_get_client.return_value = MagicMock()
-            result = await classify_ipc(session_id)
-
-        assert result["error"] == "GEMINI_QUOTA_EXHAUSTED"
-        assert result["session_id"] == session_id
+        assert len(result["claims_to_classify"]) == 1
+        assert "ai_instructions" in result
+        assert result["ai_instructions"]["task"] == "classify_ipc_codes"
 
     @pytest.mark.asyncio
     async def test_result_contains_session_id(self) -> None:
         """Result should always include the session_id."""
         session_id = await _create_session_with_ai_claims()
-
-        mock_response = IPCClassificationResponse(
-            mappings=[],
-            top_ipc_codes=[],
-            search_keywords=["test"] * 10,
-            classification_summary="Empty test.",
-        )
-
-        with patch(
-            "patent_gap_finder.tools.classify_ipc.get_gemini_client"
-        ), patch(
-            "patent_gap_finder.tools.classify_ipc._classify",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
-            result = await classify_ipc(session_id)
+        result = await classify_ipc(session_id)
 
         assert result["session_id"] == session_id

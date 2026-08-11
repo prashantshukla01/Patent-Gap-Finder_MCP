@@ -90,21 +90,9 @@ class TestDetectWhitespace:
         }
 
         db = AsyncMock()
-        # Patch assess_novelty at its SOURCE module
-        with patch("patent_gap_finder.ai.gemini_client.get_gemini_client") as mock_gc:
-            mock_client = AsyncMock()
-            mock_client.complete.return_value = (
-                '{"gemini_novelty_assessment": "Novel", '
-                '"gemini_confidence": 0.9, '
-                '"recommended_claim_scope": "broad", '
-                '"ipc_whitespace_codes": ["G06N"], '
-                '"key_differentiators": []}'
-            )
-            mock_gc.return_value = mock_client
-
-            result = await detect_whitespace(
-                "sess-1", landscape, claims, centroids, db
-            )
+        result = await detect_whitespace(
+            "sess-1", landscape, claims, centroids, db
+        )
 
         assert len(result) == 1
         assert result[0].is_whitespace is True
@@ -173,41 +161,8 @@ class TestDetectWhitespace:
         centroids = {0: np.array([10.0] + [0.0] * 383, dtype=np.float32)}
 
         db = AsyncMock()
-        with patch("patent_gap_finder.ai.gemini_client.get_gemini_client") as mock_gc:
-            mock_client = AsyncMock()
-            mock_client.complete.return_value = (
-                '{"gemini_novelty_assessment": "Novel", '
-                '"gemini_confidence": 0.8, '
-                '"recommended_claim_scope": "broad", '
-                '"ipc_whitespace_codes": [], '
-                '"key_differentiators": []}'
-            )
-            mock_gc.return_value = mock_client
-
-            result = await detect_whitespace("sess-1", landscape, claims, centroids, db)
+        result = await detect_whitespace("sess-1", landscape, claims, centroids, db)
 
         expected = round((1.0 - 0.2) * 0.9, 4)
         assert result[0].novelty_score == expected
         assert 0.0 <= result[0].novelty_score <= 1.0
-
-    @patch("patent_gap_finder.clustering.whitespace_detector.qdrant_store")
-    @patch("patent_gap_finder.clustering.whitespace_detector.encode_single")
-    async def test_gemini_only_called_for_whitespace(self, mock_encode, mock_qdrant):
-        """Gemini NOT called when is_whitespace=False."""
-        from patent_gap_finder.clustering.whitespace_detector import detect_whitespace
-
-        claim_emb = np.zeros(384, dtype=np.float32)
-        mock_encode.return_value = claim_emb
-        mock_qdrant.search_similar = AsyncMock(return_value=[
-            _make_scored_point("US-1", "P", 0.9),
-        ])
-
-        landscape = _make_landscape()
-        claims = [_make_claim()]
-        centroids = {0: np.array([0.01] + [0.0] * 383, dtype=np.float32)}
-
-        db = AsyncMock()
-        with patch("patent_gap_finder.ai.gemini_client.get_gemini_client") as mock_gc:
-            result = await detect_whitespace("sess-1", landscape, claims, centroids, db)
-            # Non-whitespace → assess_novelty never called → get_gemini_client never called
-            mock_gc.assert_not_called()

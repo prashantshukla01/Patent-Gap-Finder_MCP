@@ -74,7 +74,8 @@ class TestSearchPriorArtTool:
         mock_jrepo.get_latest_job_for_session = AsyncMock(return_value=existing_job)
 
         result = await search_prior_art("12345678-1234-1234-1234-123456789abc")
-        assert result["error"] == "JOB_ALREADY_EXISTS"
+        assert result["status"] == "complete"
+        assert result["job_id"] == "job-123"
 
     @patch("patent_gap_finder.workers.search_tasks.run_patent_search")
     @patch("patent_gap_finder.tools.search_prior_art.get_db_session")
@@ -105,11 +106,12 @@ class TestSearchPriorArtTool:
         assert result["job_id"] == "job-456"
         mock_task.delay.assert_called_once()
 
+    @patch("patent_gap_finder.search.search_coordinator.coordinate_search", new_callable=AsyncMock)
     @patch("patent_gap_finder.workers.search_tasks.run_patent_search")
     @patch("patent_gap_finder.tools.search_prior_art.get_db_session")
     @patch("patent_gap_finder.tools.search_prior_art.job_repo")
     @patch("patent_gap_finder.tools.search_prior_art.session_repo")
-    async def test_celery_unavailable(self, mock_srepo, mock_jrepo, mock_db, mock_task):
+    async def test_celery_unavailable_fallback(self, mock_srepo, mock_jrepo, mock_db, mock_task, mock_coord):
         from patent_gap_finder.tools.search_prior_art import search_prior_art
 
         session = MagicMock()
@@ -128,4 +130,5 @@ class TestSearchPriorArtTool:
         mock_task.delay.side_effect = ConnectionError("Redis down")
         result = await search_prior_art("12345678-1234-1234-1234-123456789abc")
 
-        assert result["error"] == "CELERY_UNAVAILABLE"
+        assert result["status"] == "pending"
+        assert result["job_id"] == "job-err"

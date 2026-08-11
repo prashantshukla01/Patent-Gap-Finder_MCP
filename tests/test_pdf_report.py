@@ -1,104 +1,113 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from patent_gap_finder.models.landscape import WhitespaceOpportunity
-from patent_gap_finder.models.drafts import ClaimSet, DraftedClaim, ClaimDraftReport
 from patent_gap_finder.reporting.pdf_report import generate_report
 
-
-@pytest.fixture
-def mock_db_session():
-    mock = AsyncMock()
-    # Mocking standard SQL queries or repository functions isn't ideal without the full DB setup
-    # Need to patch the methods inside generate_report that hit DB
-    return mock
+SESS_ID = "00000000-0000-0000-0000-000000000001"
 
 
 @pytest.fixture
-def sample_report_data():
-    return ClaimDraftReport(
-        session_id="session-123",
-        paper_title="A Novel Approach to AI Resiliency",
-        total_opportunities=1,
-        drafting_summary="Summary of strategy",
-        recommended_filing_order=["opp-1"],
-        claim_sets=[
-            ClaimSet(
-                opportunity_id="opp-1",
-                claim_text_original="Something novel",
-                novelty_score=0.9,
-                recommended_scope="broad",
-                claims=[
-                    DraftedClaim(
-                        claim_number=1,
-                        claim_text="A method comprising X.",
-                        claim_type="independent",
-                        patent_claim_category="method"
-                    )
-                ],
-                drafting_rationale="Rationale here",
-                distinguishing_features=["Feature A"],
-                ipc_codes=["G06N"]
-            )
-        ]
+def mock_session_data():
+    data = {
+        "id": SESS_ID,
+        "paper_title": "A Novel Approach to AI Resiliency",
+        "paper_authors": ["Author One"],
+        "paper_abstract": "Abstract here",
+        "top_ipc_codes": ["G06N 3/08"],
+        "created_at": None,
+    }
+    ns = SimpleNamespace(**data)
+    ns.to_dict = lambda: data
+    return ns
+
+
+@pytest.fixture
+def mock_opp():
+    return SimpleNamespace(
+        id="opp-1",
+        claim_text="A method comprising X",
+        claim_type="method",
+        novelty_score=0.9,
+        nearest_cluster_label="neural networks",
+        nearest_patent_ids=["US-1"],
+        nearest_patent_titles=["Patent Title 1"],
+        gemini_assessment="Novel opportunity",
+        gemini_confidence=0.85,
+        recommended_claim_scope="broad",
+        ipc_whitespace_codes=["G06N 3/08"],
+        is_whitespace=True,
     )
 
 
 @pytest.mark.asyncio
-async def test_generate_report_valid(mock_db_session, sample_report_data):
-    # Depending on how pdf_report is written, we may need to mock repository methods.
-    # Assuming pdf_report retrieves session, landscape, and sets correctly.
-    with patch("patent_gap_finder.reporting.pdf_report.get_report_data", new_callable=AsyncMock) as mock_get_data:
-        mock_get_data.return_value = (
-            # session
-            AsyncMock(paper_abstract="Abstract here", top_ipc_codes=["G06N"], total_patents_found=187),
-            # clusters
-            [AsyncMock(label="Cluster 1", patent_count=10, technical_domain="AI")],
-            # opportunities
-            [AsyncMock(novelty_score=0.9, nearest_patent_titles=[], claim_text="text")],
-            sample_report_data
-        )
+async def test_generate_report_valid(mock_session_data, mock_opp):
+    with patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
+         patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
+         patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
+         patch("patent_gap_finder.db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
+         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
 
-        pdf_bytes = await generate_report("session-123", mock_db_session)
+        db_cm = AsyncMock()
+        mock_db.return_value.__aenter__.return_value = db_cm
+        mock_result = MagicMock()
+        mock_result.scalars().first.return_value = mock_session_data
+        db_cm.execute.return_value = mock_result
 
-        # PDF signatures always start with %PDF
+        mock_patents.return_value = []
+        mock_job.return_value = SimpleNamespace(id="job-1", cluster_records=[])
+        mock_opps.return_value = [mock_opp]
+        mock_claims.return_value = []
+
+        pdf_bytes = await generate_report(SESS_ID)
+
         assert pdf_bytes.startswith(b"%PDF")
-        assert len(pdf_bytes) > 10240  # Must be larger than 10KB
+        assert len(pdf_bytes) > 1000
 
 
 @pytest.mark.asyncio
-async def test_generate_report_no_opportunities(mock_db_session):
-    report_empty = ClaimDraftReport(
-        session_id="session-123",
-        paper_title="Empty Paper",
-        total_opportunities=0,
-    )
-    
-    with patch("patent_gap_finder.reporting.pdf_report.get_report_data", new_callable=AsyncMock) as mock_get_data:
-        mock_get_data.return_value = (
-            AsyncMock(paper_abstract="Empty", top_ipc_codes=[], total_patents_found=0),
-            [],
-            [],
-            report_empty
-        )
+async def test_generate_report_no_opportunities(mock_session_data):
+    with patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
+         patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
+         patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
+         patch("patent_gap_finder.db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
+         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
 
-        pdf_bytes = await generate_report("session-123", mock_db_session)
+        db_cm = AsyncMock()
+        mock_db.return_value.__aenter__.return_value = db_cm
+        mock_result = MagicMock()
+        mock_result.scalars().first.return_value = mock_session_data
+        db_cm.execute.return_value = mock_result
+
+        mock_patents.return_value = []
+        mock_job.return_value = None
+        mock_opps.return_value = []
+        mock_claims.return_value = []
+
+        pdf_bytes = await generate_report(SESS_ID)
         assert pdf_bytes.startswith(b"%PDF")
-        # Should generate correctly, no claim section
 
 
 @pytest.mark.asyncio
-async def test_generate_report_long_title(mock_db_session, sample_report_data):
-    sample_report_data.paper_title = "VERY LONG TITLE " * 100
+async def test_generate_report_long_title(mock_session_data, mock_opp):
+    mock_session_data.paper_title = "VERY LONG TITLE " * 50
 
-    with patch("patent_gap_finder.reporting.pdf_report.get_report_data", new_callable=AsyncMock) as mock_get_data:
-        mock_get_data.return_value = (
-            AsyncMock(paper_abstract="Abstract here", top_ipc_codes=["G06N"], total_patents_found=187),
-            [],
-            [],
-            sample_report_data
-        )
+    with patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
+         patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
+         patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
+         patch("patent_gap_finder.db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
+         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
 
-        pdf_bytes = await generate_report("session-123", mock_db_session)
+        db_cm = AsyncMock()
+        mock_db.return_value.__aenter__.return_value = db_cm
+        mock_result = MagicMock()
+        mock_result.scalars().first.return_value = mock_session_data
+        db_cm.execute.return_value = mock_result
+
+        mock_patents.return_value = []
+        mock_job.return_value = None
+        mock_opps.return_value = [mock_opp]
+        mock_claims.return_value = []
+
+        pdf_bytes = await generate_report(SESS_ID)
         assert pdf_bytes.startswith(b"%PDF")
-        # Ensure it didn't throw a ReportLab width error

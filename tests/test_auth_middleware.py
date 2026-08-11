@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from starlette.responses import Response
 
@@ -77,22 +77,24 @@ async def test_auth_invalid_token(mock_app):
 
 @pytest.mark.asyncio
 async def test_auth_disabled_when_none(mock_app):
-    middleware = APIKeyMiddleware(mock_app, None)
-    
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp",
-        "headers": []
-    }
-    
-    receive = AsyncMock()
-    send = AsyncMock()
-    
-    await middleware(scope, receive, send)
-    
-    assert send.await_count == 2
-    assert send.call_args_list[0][0][0]["status"] == 200
+    import os
+    with patch.dict(os.environ, {"MCP_API_KEY": ""}):
+        middleware = APIKeyMiddleware(mock_app, None)
+        
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "headers": []
+        }
+        
+        receive = AsyncMock()
+        send = AsyncMock()
+        
+        await middleware(scope, receive, send)
+        
+        assert send.await_count == 2
+        assert send.call_args_list[0][0][0]["status"] == 200
 
 
 @pytest.mark.asyncio
