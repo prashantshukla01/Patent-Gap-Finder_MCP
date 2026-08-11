@@ -48,7 +48,7 @@ processes the results, and reasons about them natively.
 This means:
 - No `ANTHROPIC_API_KEY` required
 - No `GEMINI_API_KEY` required
-- No `OPENAI_API_KEY` required
+- No `OPENAI_API_KEY` 
 - Zero AI inference cost to the project owner
 - Claude Desktop's built-in intelligence handles everything
 
