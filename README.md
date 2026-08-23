@@ -4,6 +4,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-2.14-purple.svg)](https://github.com/jlowin/fastmcp)
+[![Langfuse Observability](https://img.shields.io/badge/Langfuse-Live%20Metrics%20%26%20Traces-blue.svg)](https://us.cloud.langfuse.com/project/cmt5wcj2n004pad0i3h8ovphb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
 [![Claude Desktop](https://img.shields.io/badge/Claude%20Desktop-MCP%20Ready-orange.svg)](https://claude.ai/download)
 [![Version](https://img.shields.io/badge/version-1.1.0-brightgreen.svg)](https://github.com/prashantshukla01/Patent-Gap-Finder/releases)
@@ -26,6 +27,7 @@ Researchers and startup CTOs routinely build patentable innovations without real
 
 - [Architecture Overview](#architecture-overview)
 - [Features](#features)
+- [Observability & Live Metrics](#observability--live-metrics)
 - [MCP Tools](#mcp-tools)
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
@@ -116,6 +118,33 @@ Researchers and startup CTOs routinely build patentable innovations without real
 - Health endpoint (`/health`) for container orchestration
 - Full Web UI (Next.js 15) with D3.js patent landscape visualization
 - Railway production deployment via Docker
+
+---
+
+## Observability & Live Metrics
+
+Patent Gap Finder includes complete observability, tracing, and automated pipeline evaluation powered by **[Langfuse](https://langfuse.com)**. Every tool execution, model embedding generation, HDBSCAN clustering step, and drafted patent claim is profiled and scored in real time.
+
+### 🔗 Live Dashboards & Model Metrics
+
+You can inspect the live execution traces, model latency, and evaluation scores directly on the Langfuse platform:
+
+* 📊 **[Project Overview Dashboard](https://us.cloud.langfuse.com/project/cmt5wcj2n004pad0i3h8ovphb)**
+* ⏱️ **[Live Tool Traces & Execution Latency](https://us.cloud.langfuse.com/project/cmt5wcj2n004pad0i3h8ovphb/traces)**
+* 📈 **[Model Evaluation & Quality Scores](https://us.cloud.langfuse.com/project/cmt5wcj2n004pad0i3h8ovphb/scores)**
+
+### 📐 Tracked Mathematical & Quality Metrics
+
+| Metric | Range | Description |
+| :--- | :--- | :--- |
+| **`silhouette_score`** | `-1.0` to `+1.0` | Mathematical cluster cohesion and separation quality calculated across patent embedding space. |
+| **`noise_ratio`** | `0.0` to `1.0` | Percentage of retrieved prior art patents identified as outlier noise by HDBSCAN. |
+| **`cluster_count`** | `0+` | Number of distinct patent technological landscape clusters formed. |
+| **`whitespace_opportunity_count`** | `0+` | Number of identified white-space innovation gap regions. |
+| **`avg_claim_novelty_score`** | `0.0` to `1.0` | Average cosine distance between research paper claims and nearest prior art patents. |
+| **`claim_structural_compliance`** | `0.0` to `1.0` | Automated USPTO 35 U.S.C. 112 structural validator (preamble, transition word `comprising`, body technical limitations). |
+| **`SentenceTransformer.encode_texts`** | `ms` | Dense vector embedding latency and item throughput profiling. |
+| **FastMCP Tool Traces** | `ms` | Input payloads, session IDs, execution durations, and output responses across all 13 FastMCP tools. |
 
 ---
 
@@ -568,7 +597,7 @@ PYTHONPATH=src uv run pytest tests/test_pdf_parser.py -v
 
 ```bash
 docker compose up -d postgres redis qdrant
-PYTHONPATH=src MCP_TRANSPORT=streamable-http uv run python -m patent_gap_finder.server
+PYTHONPATH=src MCP_TRANSPORT=streamable-http uv run python -m server
 ```
 
 ### Railway (Production)
