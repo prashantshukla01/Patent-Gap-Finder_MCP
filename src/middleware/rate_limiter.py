@@ -41,7 +41,7 @@ async def check_rate_limit(client_ip: str) -> tuple[bool, int]:
         If is_allowed is False, retry_after_seconds > 0.
     """
     try:
-        from patent_gap_finder.cache.redis_client import get_redis_client
+        from cache.redis_client import get_redis_client
 
         redis_client = get_redis_client()
         conn = await redis_client._get_connection()
@@ -112,8 +112,8 @@ class RateLimitMiddleware:
 
         client_ip = _get_client_ip(scope)
 
-        # Exempt localhost
-        if client_ip in EXEMPT_IPS:
+        # Exempt localhost and OPTIONS preflight requests
+        if client_ip in EXEMPT_IPS or scope.get("method") == "OPTIONS":
             await self.app(scope, receive, send)
             return
 

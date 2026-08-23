@@ -12,10 +12,10 @@ Phase 5 additions:
 
 Usage:
     # stdio transport (Claude Desktop)
-    uv run python -m patent_gap_finder.server
+    uv run python -m server
 
     # streamable-http transport
-    MCP_TRANSPORT=streamable-http uv run python -m patent_gap_finder.server
+    MCP_TRANSPORT=streamable-http uv run python -m server
 """
 
 from __future__ import annotations
@@ -33,19 +33,19 @@ from starlette.middleware import Middleware as StarletteMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
-from patent_gap_finder.tools.parse_paper import parse_paper as _parse_paper_impl
-from patent_gap_finder.tools.classify_ipc import classify_ipc as _classify_ipc_impl
-from patent_gap_finder.tools.get_session import get_session as _get_session_impl
-from patent_gap_finder.tools.search_prior_art import search_prior_art as _search_prior_art_impl
-from patent_gap_finder.tools.get_search_status import get_search_status as _get_search_status_impl
-from patent_gap_finder.tools.map_landscape import map_landscape as _map_landscape_impl
-from patent_gap_finder.tools.find_whitespace import find_whitespace as _find_whitespace_impl
-from patent_gap_finder.tools.draft_claims import draft_claims as _draft_claims_impl
-from patent_gap_finder.tools.export_report import export_report as _export_report_impl
-from patent_gap_finder.tools.save_claims import save_claims as _save_claims_impl
-from patent_gap_finder.tools.save_classification import save_classification as _save_classification_impl
-from patent_gap_finder.tools.save_whitespace import save_whitespace as _save_whitespace_impl
-from patent_gap_finder.tools.save_drafted_claims import save_drafted_claims as _save_drafted_claims_impl
+from tools.parse_paper import parse_paper as _parse_paper_impl
+from tools.classify_ipc import classify_ipc as _classify_ipc_impl
+from tools.get_session import get_session as _get_session_impl
+from tools.search_prior_art import search_prior_art as _search_prior_art_impl
+from tools.get_search_status import get_search_status as _get_search_status_impl
+from tools.map_landscape import map_landscape as _map_landscape_impl
+from tools.find_whitespace import find_whitespace as _find_whitespace_impl
+from tools.draft_claims import draft_claims as _draft_claims_impl
+from tools.export_report import export_report as _export_report_impl
+from tools.save_claims import save_claims as _save_claims_impl
+from tools.save_classification import save_classification as _save_classification_impl
+from tools.save_whitespace import save_whitespace as _save_whitespace_impl
+from tools.save_drafted_claims import save_drafted_claims as _save_drafted_claims_impl
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -105,7 +105,7 @@ async def lifespan(server):
 
     # Database
     try:
-        from patent_gap_finder.db.connection import init_db
+        from db.connection import init_db
         await asyncio.wait_for(init_db(), timeout=2.0)
         logger.info("Database initialized")
     except Exception as e:
@@ -113,7 +113,7 @@ async def lifespan(server):
 
     # Redis
     try:
-        from patent_gap_finder.cache.redis_client import get_redis_client
+        from cache.redis_client import get_redis_client
         redis = get_redis_client()
         stats = await asyncio.wait_for(redis.get_cache_stats(), timeout=1.0)
         logger.info("Redis connected: %s", stats)
@@ -122,7 +122,7 @@ async def lifespan(server):
 
     # Qdrant
     try:
-        from patent_gap_finder.embeddings.qdrant_store import ensure_collection_exists
+        from embeddings.qdrant_store import ensure_collection_exists
         await asyncio.wait_for(ensure_collection_exists(), timeout=1.0)
         logger.info("Qdrant collection ready")
     except Exception as e:
@@ -130,7 +130,7 @@ async def lifespan(server):
 
     # Embedding model warmup
     try:
-        from patent_gap_finder.embeddings.embedding_engine import get_embedding_model
+        from embeddings.embedding_engine import get_embedding_model
         get_embedding_model()
         logger.info("Embedding model loaded")
     except Exception as e:
@@ -140,13 +140,13 @@ async def lifespan(server):
 
     # Shutdown
     try:
-        from patent_gap_finder.cache.redis_client import get_redis_client
+        from cache.redis_client import get_redis_client
         redis = get_redis_client()
         await redis.close()
     except Exception:
         pass
     try:
-        from patent_gap_finder.db.connection import close_db
+        from db.connection import close_db
         await close_db()
     except Exception:
         pass
@@ -462,7 +462,7 @@ async def _run_health_checks() -> dict:
 
     # PostgreSQL
     try:
-        from patent_gap_finder.db.connection import get_db_session
+        from db.connection import get_db_session
         from sqlalchemy import text
 
         async with get_db_session() as db:
@@ -473,7 +473,7 @@ async def _run_health_checks() -> dict:
 
     # Redis
     try:
-        from patent_gap_finder.cache.redis_client import get_redis_client
+        from cache.redis_client import get_redis_client
         redis = get_redis_client()
         conn = await redis._get_connection()
         if conn:
@@ -486,7 +486,7 @@ async def _run_health_checks() -> dict:
 
     # Qdrant
     try:
-        from patent_gap_finder.embeddings.qdrant_store import get_collection_stats
+        from embeddings.qdrant_store import get_collection_stats
         await get_collection_stats()
         checks["qdrant"] = "ok"
     except Exception as e:
@@ -494,7 +494,7 @@ async def _run_health_checks() -> dict:
 
     # Embedding model
     try:
-        from patent_gap_finder.embeddings.embedding_engine import get_embedding_model
+        from embeddings.embedding_engine import get_embedding_model
         get_embedding_model()
         checks["embedding_model"] = "ok"
     except Exception as e:
@@ -569,7 +569,7 @@ def quota_status() -> dict:
 async def cache_stats() -> dict:
     """Redis cache statistics."""
     try:
-        from patent_gap_finder.cache.redis_client import get_redis_client
+        from cache.redis_client import get_redis_client
         redis = get_redis_client()
         return await redis.get_cache_stats()
     except Exception:
@@ -580,7 +580,7 @@ async def cache_stats() -> dict:
 async def qdrant_stats() -> dict:
     """Qdrant vector store statistics."""
     try:
-        from patent_gap_finder.embeddings.qdrant_store import get_collection_stats
+        from embeddings.qdrant_store import get_collection_stats
         return await get_collection_stats()
     except Exception:
         return {"status": "unavailable"}
@@ -592,12 +592,24 @@ async def qdrant_stats() -> dict:
 
 def _get_middleware() -> list[StarletteMiddleware]:
     """Build the middleware stack for HTTP transport."""
-    from patent_gap_finder.middleware.auth import APIKeyMiddleware
-    from patent_gap_finder.middleware.rate_limiter import RateLimitMiddleware
+    from starlette.middleware.cors import CORSMiddleware
+    from middleware.auth import APIKeyMiddleware
+    from middleware.rate_limiter import RateLimitMiddleware
 
     middlewares: list[StarletteMiddleware] = []
 
-    # Rate limiting (outermost — runs first, before auth)
+    # CORS middleware (outermost — allows cross-origin requests from web clients)
+    middlewares.append(
+        StarletteMiddleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["*"],
+        )
+    )
+
+    # Rate limiting (runs before auth)
     middlewares.append(StarletteMiddleware(RateLimitMiddleware))
 
     # API key authentication
@@ -612,6 +624,15 @@ def _get_middleware() -> list[StarletteMiddleware]:
         )
 
     return middlewares
+
+
+from starlette.responses import JSONResponse
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_endpoint(request):
+    """Health check endpoint for Docker / Oracle Cloud / load balancer."""
+    return JSONResponse({"status": "healthy", "service": "patent-gap-finder"})
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -632,10 +653,10 @@ def main() -> None:
         import uvicorn
 
         middlewares = _get_middleware()
-        app = mcp.http_app(
-            transport="streamable-http",
-            middleware=middlewares,
-        )
+        app = mcp.streamable_http_app()
+        for mw in middlewares:
+            app.add_middleware(mw.cls, **mw.kwargs)
+
         logger.info(
             "HTTP server starting on %s:%d with %d middleware(s)",
             host, port, len(middlewares),

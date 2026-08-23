@@ -11,10 +11,10 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from patent_gap_finder.db.connection import get_db_session
-from patent_gap_finder.db.models import AnalysisSession
-from patent_gap_finder.db.repositories import drafts_repo
-from patent_gap_finder.models.drafts import ClaimSet, DraftedClaim
+from db.connection import get_db_session
+from db.models import AnalysisSession
+from db.repositories import drafts_repo
+from models.drafts import ClaimSet, DraftedClaim
 
 logger = logging.getLogger(__name__)
 

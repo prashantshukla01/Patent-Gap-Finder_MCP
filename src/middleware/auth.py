@@ -45,7 +45,11 @@ class APIKeyMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Check if path is exempt from auth
+        # Check if path is exempt from auth or if it is an OPTIONS preflight
+        if scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
         path = scope.get("path", "")
         if path in AUTH_EXEMPT_PATHS:
             await self.app(scope, receive, send)

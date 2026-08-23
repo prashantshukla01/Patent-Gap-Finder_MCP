@@ -11,14 +11,14 @@ import logging
 import time
 from typing import Optional
 
-from patent_gap_finder.cache.redis_client import get_redis_client, RedisClient
-from patent_gap_finder.models.patent import Patent, PatentSearchResult
-from patent_gap_finder.search import (
+from cache.redis_client import get_redis_client, RedisClient
+from models.patent import Patent, PatentSearchResult
+from search import (
     epo_client as epo_mod,
     serpapi_client as serpapi_mod,
     uspto_client as uspto_mod,
 )
-from patent_gap_finder.search.normalizer import (
+from search.normalizer import (
     build_search_result,
     normalize_epo,
     normalize_serpapi,
@@ -202,8 +202,8 @@ async def _persist_results(
     session_id: str, job_id: str, result: PatentSearchResult
 ) -> None:
     """Persist patents and update job/session in DB."""
-    from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.repositories import job_repo, patent_repo, session_repo
+    from db.connection import get_db_session
+    from db.repositories import job_repo, patent_repo, session_repo
 
     async with get_db_session() as db:
         # Upsert patents

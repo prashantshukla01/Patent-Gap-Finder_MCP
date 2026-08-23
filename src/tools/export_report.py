@@ -34,8 +34,8 @@ async def export_report(session_id: str) -> dict:
     if not UUID_PATTERN.match(session_id):
         return {"error": "INVALID_SESSION_ID", "message": "Not a valid UUID"}
 
-    from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.models import AnalysisSession
+    from db.connection import get_db_session
+    from db.models import AnalysisSession
     from sqlalchemy import select
 
     async with get_db_session() as db:
@@ -59,7 +59,7 @@ async def export_report(session_id: str) -> dict:
 
     # Generate PDF
     try:
-        from patent_gap_finder.reporting.pdf_report import generate_report
+        from reporting.pdf_report import generate_report
 
         pdf_bytes = await generate_report(session_id)
     except Exception as e:

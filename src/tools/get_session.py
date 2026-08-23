@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from patent_gap_finder.db.connection import get_db_session
-from patent_gap_finder.db.repositories import claim_repo, session_repo
+from db.connection import get_db_session
+from db.repositories import claim_repo, session_repo
 
 logger = logging.getLogger(__name__)
 

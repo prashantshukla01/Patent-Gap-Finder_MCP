@@ -12,7 +12,7 @@ from collections import Counter
 from datetime import date
 from typing import Optional
 
-from patent_gap_finder.models.patent import Patent, PatentSearchResult, PatentSource
+from models.patent import Patent, PatentSearchResult, PatentSource
 
 logger = logging.getLogger(__name__)
 

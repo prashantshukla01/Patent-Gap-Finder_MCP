@@ -37,9 +37,9 @@ async def draft_claims(
     if not UUID_PATTERN.match(session_id):
         return {"error": "INVALID_SESSION_ID", "message": "Not a valid UUID"}
 
-    from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.models import AnalysisSession
-    from patent_gap_finder.db.repositories import (
+    from db.connection import get_db_session
+    from db.models import AnalysisSession
+    from db.repositories import (
         landscape_repo,
         patent_repo,
     )

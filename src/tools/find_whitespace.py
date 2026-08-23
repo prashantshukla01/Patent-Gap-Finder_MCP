@@ -34,9 +34,9 @@ async def find_whitespace(
     if not UUID_PATTERN.match(session_id):
         return {"error": "INVALID_SESSION_ID", "message": "Not a valid UUID"}
 
-    from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.models import AnalysisSession, ExtractedClaim
-    from patent_gap_finder.db.repositories import landscape_repo
+    from db.connection import get_db_session
+    from db.models import AnalysisSession, ExtractedClaim
+    from db.repositories import landscape_repo
 
     async with get_db_session() as db:
         # Load session
@@ -84,7 +84,7 @@ async def find_whitespace(
             }
 
         # Build LandscapeMap from DB records
-        from patent_gap_finder.models.landscape import ClusterInfo, LandscapeMap
+        from models.landscape import ClusterInfo, LandscapeMap
 
         landscape = LandscapeMap(
             session_id=session_id,
@@ -108,8 +108,8 @@ async def find_whitespace(
         )
 
         # Reconstruct centroids from Qdrant
-        from patent_gap_finder.embeddings import qdrant_store
-        from patent_gap_finder.clustering.hdbscan_clusterer import compute_centroids
+        from embeddings import qdrant_store
+        from clustering.hdbscan_clusterer import compute_centroids
 
         try:
             all_ids, all_embeddings = await qdrant_store.get_all_session_embeddings(
@@ -123,7 +123,7 @@ async def find_whitespace(
 
         # Rebuild labels from Qdrant data for centroid computation
         import numpy as np
-        from patent_gap_finder.db.repositories import patent_repo
+        from db.repositories import patent_repo
 
         # Get cluster assignments from DB
         patents = await patent_repo.get_patents_for_session(db, session_id)
@@ -135,7 +135,7 @@ async def find_whitespace(
         centroids = compute_centroids(all_embeddings, labels)
 
         # Detect whitespace
-        from patent_gap_finder.clustering.whitespace_detector import detect_whitespace
+        from clustering.whitespace_detector import detect_whitespace
 
         opportunities = await detect_whitespace(
             session_id=session_id,

@@ -36,13 +36,13 @@ async def map_landscape(session_id: str) -> dict:
     if not UUID_PATTERN.match(session_id):
         return {"error": "INVALID_SESSION_ID", "message": "Not a valid UUID"}
 
-    from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.repositories import patent_repo
-    from patent_gap_finder.db.repositories import landscape_repo
-    from patent_gap_finder.db.models import AnalysisSession
+    from db.connection import get_db_session
+    from db.repositories import patent_repo
+    from db.repositories import landscape_repo
+    from db.models import AnalysisSession
 
     try:
-        from patent_gap_finder.embeddings import qdrant_store
+        from embeddings import qdrant_store
         await qdrant_store.ensure_collection_exists()
     except Exception as e:
         return {
@@ -64,7 +64,7 @@ async def map_landscape(session_id: str) -> dict:
         # Check Phase 3 completion
         if not session.patent_search_complete:
             # Auto-heal: Check if a completed search job exists
-            from patent_gap_finder.db.repositories import job_repo
+            from db.repositories import job_repo
             latest_job = await job_repo.get_latest_job_for_session(db, session_id)
             if latest_job and latest_job.status == "complete":
                 session.patent_search_complete = True
@@ -110,7 +110,7 @@ async def map_landscape(session_id: str) -> dict:
 
         # Build landscape
         try:
-            from patent_gap_finder.clustering.landscape_builder import (
+            from clustering.landscape_builder import (
                 build_landscape,
                 InsufficientPatentsError,
             )

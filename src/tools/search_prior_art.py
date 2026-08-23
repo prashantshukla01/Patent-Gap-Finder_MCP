@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from patent_gap_finder.db.connection import get_db_session
-from patent_gap_finder.db.repositories import job_repo, session_repo
+from db.connection import get_db_session
+from db.repositories import job_repo, session_repo
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +113,8 @@ async def search_prior_art(session_id: str) -> dict:
 
         # Dispatch Celery task (sync call, safe from async context)
         try:
-            from patent_gap_finder.workers.celery_app import celery_app
-            from patent_gap_finder.workers.search_tasks import run_patent_search
+            from workers.celery_app import celery_app
+            from workers.search_tasks import run_patent_search
 
             inspector = celery_app.control.inspect(timeout=1.0)
             ping_resp = inspector.ping() if inspector else None
@@ -135,7 +135,7 @@ async def search_prior_art(session_id: str) -> dict:
         except Exception as e:
             logger.info("Celery/Redis unavailable (%s) — launching in-process search task fallback", e)
             import asyncio
-            from patent_gap_finder.search.search_coordinator import coordinate_search
+            from search.search_coordinator import coordinate_search
 
             async def _run_search_fallback():
                 try:

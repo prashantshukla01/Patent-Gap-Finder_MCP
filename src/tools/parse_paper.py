@@ -21,14 +21,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from patent_gap_finder.models.paper import (
+from models.paper import (
     CandidateClaim,
     ParsedPaper,
     ParsedSection,
 )
-from patent_gap_finder.parsers.arxiv_parser import is_arxiv_source, parse_arxiv
-from patent_gap_finder.parsers.pdf_parser import parse_pdf
-from patent_gap_finder.utils.text_utils import (
+from parsers.arxiv_parser import is_arxiv_source, parse_arxiv
+from parsers.pdf_parser import parse_pdf
+from utils.text_utils import (
     classify_section_type,
     clean_text,
     extract_candidate_claims,
@@ -254,8 +254,8 @@ async def _persist_and_instruct(parsed) -> dict:
     result = parsed.model_dump(mode="json")
 
     try:
-        from patent_gap_finder.db.connection import get_db_session
-        from patent_gap_finder.db.repositories import claim_repo, session_repo
+        from db.connection import get_db_session
+        from db.repositories import claim_repo, session_repo
 
         async with get_db_session() as db:
             # Check for duplicate

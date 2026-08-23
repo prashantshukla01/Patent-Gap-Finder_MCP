@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from patent_gap_finder.db.connection import get_db_session
-from patent_gap_finder.db.repositories import job_repo
+from db.connection import get_db_session
+from db.repositories import job_repo
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ async def get_search_status(job_id: str) -> dict:
             celery_status = "UNKNOWN"
             if job.celery_task_id:
                 try:
-                    from patent_gap_finder.workers.celery_app import celery_app
+                    from workers.celery_app import celery_app
                     from celery.result import AsyncResult
                     result = AsyncResult(job.celery_task_id, app=celery_app)
                     celery_status = result.state
