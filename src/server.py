@@ -33,6 +33,7 @@ from starlette.middleware import Middleware as StarletteMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
+from observability.tracer import trace_tool
 from tools.parse_paper import parse_paper as _parse_paper_impl
 from tools.classify_ipc import classify_ipc as _classify_ipc_impl
 from tools.get_session import get_session as _get_session_impl
@@ -136,6 +137,17 @@ async def lifespan(server):
     except Exception as e:
         logger.warning("Embedding model warmup skipped: %s", e)
 
+    # Observability
+    try:
+        from observability.tracer import get_langfuse_client, is_langfuse_enabled
+        if is_langfuse_enabled():
+            get_langfuse_client()
+            logger.info("Langfuse observability initialized")
+        else:
+            logger.info("Langfuse observability running in no-op mode")
+    except Exception as e:
+        logger.warning("Observability initialization skipped: %s", e)
+
     yield
 
     # Shutdown
@@ -190,6 +202,7 @@ mcp = FastMCP(
 # ──────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+@trace_tool("parse_paper")
 async def parse_paper(
     source: str = "",
     content: str = "",
@@ -220,6 +233,7 @@ async def parse_paper(
 
 
 @mcp.tool()
+@trace_tool("classify_ipc")
 async def classify_ipc(session_id: str) -> dict:
     """Get claims with IPC/CPC classification instructions.
 
@@ -237,6 +251,7 @@ async def classify_ipc(session_id: str) -> dict:
 
 
 @mcp.tool()
+@trace_tool("save_claims")
 async def save_claims(
     session_id: str,
     claims: list[dict],
@@ -265,6 +280,7 @@ async def save_claims(
 
 
 @mcp.tool()
+@trace_tool("save_classification")
 async def save_classification(
     session_id: str,
     mappings: list[dict],
@@ -293,6 +309,7 @@ async def save_classification(
 
 
 @mcp.tool()
+@trace_tool("search_prior_art")
 async def search_prior_art(session_id: str) -> dict:
     """Search USPTO, EPO, and Google Patents for prior art.
 
@@ -309,6 +326,7 @@ async def search_prior_art(session_id: str) -> dict:
 
 
 @mcp.tool()
+@trace_tool("get_search_status")
 async def get_search_status(job_id: str) -> dict:
     """Poll the status of a patent search job.
 
@@ -322,6 +340,7 @@ async def get_search_status(job_id: str) -> dict:
 
 
 @mcp.tool()
+@trace_tool("map_landscape")
 async def map_landscape(session_id: str) -> dict:
     """Build a patent landscape map from search results.
 
@@ -338,6 +357,7 @@ async def map_landscape(session_id: str) -> dict:
 
 
 @mcp.tool()
+@trace_tool("find_whitespace")
 async def find_whitespace(
     session_id: str,
     min_novelty_score: float = 0.5,
@@ -359,6 +379,7 @@ async def find_whitespace(
 
 
 @mcp.tool()
+@trace_tool("save_whitespace")
 async def save_whitespace(
     session_id: str,
     assessments: list[dict],
@@ -379,6 +400,7 @@ async def save_whitespace(
 
 
 @mcp.tool()
+@trace_tool("draft_claims")
 async def draft_claims(
     session_id: str,
     min_novelty_score: float = 0.5,
@@ -399,6 +421,7 @@ async def draft_claims(
 
 
 @mcp.tool()
+@trace_tool("save_drafted_claims")
 async def save_drafted_claims(
     session_id: str,
     claim_sets: list[dict],
@@ -420,6 +443,7 @@ async def save_drafted_claims(
 
 
 @mcp.tool()
+@trace_tool("export_report")
 async def export_report(session_id: str) -> dict:
     """Generate and download a PDF patent gap analysis report.
 
@@ -437,6 +461,7 @@ async def export_report(session_id: str) -> dict:
 
 
 @mcp.tool()
+@trace_tool("get_session")
 async def get_session(session_id: str) -> dict:
     """Retrieve a past analysis session with all results.
 

@@ -36,6 +36,8 @@ dependencies = [
     "starlette>=0.37",
     "uvicorn>=0.29",
     "aiosqlite>=0.20",
+    # Observability & Tracing
+    "langfuse>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +65,7 @@ packages = [
     "src/embeddings",
     "src/middleware",
     "src/models",
+    "src/observability",
     "src/parsers",
     "src/reporting",
     "src/search",

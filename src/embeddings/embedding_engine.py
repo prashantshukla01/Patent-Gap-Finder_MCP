@@ -86,23 +86,26 @@ async def encode_texts(texts: list[str]) -> np.ndarray:
     if not texts:
         return np.empty((0, EMBEDDING_DIM), dtype=np.float32)
 
-    model = get_embedding_model()
-    loop = asyncio.get_event_loop()
-    encode_fn = partial(
-        model.encode,
-        texts,
-        batch_size=64,
-        show_progress_bar=False,
-        normalize_embeddings=False,
-    )
-    embeddings = await loop.run_in_executor(None, encode_fn)
+    from observability.tracer import trace_span
 
-    if embeddings.shape[1] != EMBEDDING_DIM:
-        raise EmbeddingDimensionMismatchError(
-            f"Expected dim {EMBEDDING_DIM}, got {embeddings.shape[1]}"
+    with trace_span("SentenceTransformer.encode_texts", metadata={"text_count": len(texts), "model": MODEL_NAME}):
+        model = get_embedding_model()
+        loop = asyncio.get_event_loop()
+        encode_fn = partial(
+            model.encode,
+            texts,
+            batch_size=64,
+            show_progress_bar=False,
+            normalize_embeddings=False,
         )
+        embeddings = await loop.run_in_executor(None, encode_fn)
 
-    return embeddings
+        if embeddings.shape[1] != EMBEDDING_DIM:
+            raise EmbeddingDimensionMismatchError(
+                f"Expected dim {EMBEDDING_DIM}, got {embeddings.shape[1]}"
+            )
+
+        return embeddings
 
 
 async def encode_single(text: str) -> np.ndarray:

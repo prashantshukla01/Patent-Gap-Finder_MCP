@@ -69,45 +69,54 @@ def run_clustering(
     current_params = dict(params)
     max_retries = 2
 
-    for attempt in range(max_retries + 1):
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=current_params["min_cluster_size"],
-            min_samples=current_params["min_samples"],
-            metric="euclidean",
-            cluster_selection_method="eom",
-            core_dist_n_jobs=1,
-            algorithm="generic",
-        )
-        labels = clusterer.fit_predict(embeddings)
-        probabilities = clusterer.probabilities_
+    from observability.tracer import trace_span, log_score
+    from observability.metrics import compute_clustering_metrics
 
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        noise_count = int((labels == -1).sum())
-
-        logger.info(
-            "HDBSCAN attempt %d: n_clusters=%d noise=%d params=%s",
-            attempt + 1, n_clusters, noise_count, current_params,
-        )
-
-        if n_clusters == 0 and attempt < max_retries:
-            # All noise — reduce min_cluster_size
-            current_params["min_cluster_size"] = max(
-                2, current_params["min_cluster_size"] - 1
+    with trace_span("HDBSCAN.run_clustering", metadata={"n_patents": n_patents, "initial_params": params}):
+        for attempt in range(max_retries + 1):
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=current_params["min_cluster_size"],
+                min_samples=current_params["min_samples"],
+                metric="euclidean",
+                cluster_selection_method="eom",
+                core_dist_n_jobs=1,
+                algorithm="generic",
             )
-            logger.warning("All noise — reducing min_cluster_size to %d",
-                           current_params["min_cluster_size"])
-            continue
+            labels = clusterer.fit_predict(embeddings)
+            probabilities = clusterer.probabilities_
 
-        if n_clusters == 1 and attempt < max_retries:
-            # One cluster — increase min_cluster_size
-            current_params["min_cluster_size"] += 2
-            logger.warning("Single cluster — increasing min_cluster_size to %d",
-                           current_params["min_cluster_size"])
-            continue
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            noise_count = int((labels == -1).sum())
 
-        break
+            logger.info(
+                "HDBSCAN attempt %d: n_clusters=%d noise=%d params=%s",
+                attempt + 1, n_clusters, noise_count, current_params,
+            )
 
-    return labels, probabilities, current_params
+            if n_clusters == 0 and attempt < max_retries:
+                # All noise — reduce min_cluster_size
+                current_params["min_cluster_size"] = max(
+                    2, current_params["min_cluster_size"] - 1
+                )
+                logger.warning("All noise — reducing min_cluster_size to %d",
+                               current_params["min_cluster_size"])
+                continue
+
+            if n_clusters == 1 and attempt < max_retries:
+                # One cluster — increase min_cluster_size
+                current_params["min_cluster_size"] += 2
+                logger.warning("Single cluster — increasing min_cluster_size to %d",
+                               current_params["min_cluster_size"])
+                continue
+
+            break
+
+        metrics = compute_clustering_metrics(embeddings, labels)
+        log_score("silhouette_score", metrics["silhouette_score"], comment="HDBSCAN cluster separation")
+        log_score("noise_ratio", metrics["noise_ratio"], comment="Percentage of outlier patents")
+        log_score("cluster_count", metrics["cluster_count"], comment="Total thematic clusters")
+
+        return labels, probabilities, current_params
 
 
 def compute_centroids(

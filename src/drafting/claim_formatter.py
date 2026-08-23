@@ -105,6 +105,18 @@ def format_claim_set(raw_claims: list[DraftedClaim]) -> str:
             if continuation:
                 lines.append(f"   {continuation}")
 
+    from observability.tracer import log_score
+    from observability.metrics import evaluate_claim_structure
+
+    scores = []
+    for claim in raw_claims:
+        eval_res = evaluate_claim_structure(claim.claim_text)
+        scores.append(eval_res["structural_score"])
+
+    if scores:
+        avg_score = round(sum(scores) / len(scores), 2)
+        log_score("claim_structural_compliance", float(avg_score), comment="Average USPTO claim drafting structural compliance score")
+
     return "\n".join(lines) + "\n"
 
 

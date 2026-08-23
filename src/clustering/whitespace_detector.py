@@ -160,13 +160,23 @@ async def detect_whitespace(
         )
         opportunities.append(opportunity)
 
-    # Sort by novelty score descending
-    opportunities.sort(key=lambda o: o.novelty_score, reverse=True)
+    from observability.tracer import trace_span, log_score
+    from observability.metrics import compute_whitespace_metrics
 
-    logger.info(
-        "White-space detection: %d claims analyzed, %d opportunities found",
-        len(claims),
-        sum(1 for o in opportunities if o.is_whitespace),
-    )
+    with trace_span("WhitespaceDetector.detect_whitespace", metadata={"claims_count": len(claims), "session_id": session_id}):
+        # Sort by novelty score descending
+        opportunities.sort(key=lambda o: o.novelty_score, reverse=True)
 
-    return opportunities
+        whitespace_count = sum(1 for o in opportunities if o.is_whitespace)
+        avg_novelty = sum(o.novelty_score for o in opportunities) / len(opportunities) if opportunities else 0.0
+
+        log_score("whitespace_opportunity_count", float(whitespace_count), comment="Number of identified whitespace opportunities")
+        log_score("avg_claim_novelty_score", float(round(avg_novelty, 4)), comment="Average calculated novelty score")
+
+        logger.info(
+            "White-space detection: %d claims analyzed, %d opportunities found",
+            len(claims),
+            whitespace_count,
+        )
+
+        return opportunities
