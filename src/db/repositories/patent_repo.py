@@ -13,8 +13,8 @@ from typing import Optional
 from sqlalchemy import insert, select, String, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.db.models import PatentRecord, session_patents
-from patent_gap_finder.models.patent import Patent
+from db.models import PatentRecord, session_patents
+from models.patent import Patent
 
 logger = logging.getLogger(__name__)
 

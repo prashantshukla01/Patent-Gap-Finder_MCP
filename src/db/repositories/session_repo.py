@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.db.models import AnalysisSession
+from db.models import AnalysisSession
 
 logger = logging.getLogger(__name__)
 

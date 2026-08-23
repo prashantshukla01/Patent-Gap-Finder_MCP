@@ -14,10 +14,10 @@ from typing import Optional
 import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.embeddings import qdrant_store
-from patent_gap_finder.embeddings.embedding_engine import encode_single
-from patent_gap_finder.embeddings.text_preparer import prepare_claim_text
-from patent_gap_finder.models.landscape import (
+from embeddings import qdrant_store
+from embeddings.embedding_engine import encode_single
+from embeddings.text_preparer import prepare_claim_text
+from models.landscape import (
     ClusterInfo,
     LandscapeMap,
     WhitespaceOpportunity,

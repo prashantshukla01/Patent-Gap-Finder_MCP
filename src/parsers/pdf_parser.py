@@ -18,8 +18,8 @@ from typing import Optional
 
 import fitz  # PyMuPDF
 
-from patent_gap_finder.models.paper import CandidateClaim, ParsedPaper, ParsedSection
-from patent_gap_finder.utils.text_utils import (
+from models.paper import CandidateClaim, ParsedPaper, ParsedSection
+from utils.text_utils import (
     classify_section_type,
     clean_text,
     extract_candidate_claims,

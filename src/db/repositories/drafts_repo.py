@@ -10,8 +10,8 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.db.models import DraftedClaimRecord
-from patent_gap_finder.models.drafts import ClaimSet
+from db.models import DraftedClaimRecord
+from models.drafts import ClaimSet
 
 logger = logging.getLogger(__name__)
 

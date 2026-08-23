@@ -37,8 +37,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from patent_gap_finder.drafting.claim_formatter import format_claim_set, validate_claim_set
-from patent_gap_finder.models.drafts import DraftedClaim
+from drafting.claim_formatter import format_claim_set, validate_claim_set
+from models.drafts import DraftedClaim
 
 logger = logging.getLogger(__name__)
 
@@ -600,13 +600,13 @@ async def generate_report(session_id: str) -> bytes:
     Raises:
         ValueError: If session_id is not found.
     """
-    from patent_gap_finder.db.connection import get_db_session
-    from patent_gap_finder.db.models import (
+    from db.connection import get_db_session
+    from db.models import (
         AnalysisSession,
         PatentRecord,
         WhitespaceOpportunityRecord,
     )
-    from patent_gap_finder.db.repositories import (
+    from db.repositories import (
         landscape_repo,
         patent_repo,
     )
@@ -676,7 +676,7 @@ async def generate_report(session_id: str) -> bytes:
         # Load drafted claims
         claim_sets = []
         try:
-            from patent_gap_finder.db.repositories import drafts_repo
+            from db.repositories import drafts_repo
 
             raw_sets = await drafts_repo.get_claim_sets_for_session(db, session_id)
             claim_sets = raw_sets

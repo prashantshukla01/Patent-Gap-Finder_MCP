@@ -13,7 +13,7 @@ from typing import Optional
 
 import numpy as np
 
-from patent_gap_finder.embeddings.embedding_engine import EMBEDDING_DIM
+from embeddings.embedding_engine import EMBEDDING_DIM
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,6 @@ def run_clustering(
     Raises:
         ValueError: If embeddings array has wrong shape/dimension.
     """
-    import hdbscan
-
     assert embeddings.ndim == 2, (
         f"Expected 2D array (n_patents, {EMBEDDING_DIM}), "
         f"got shape {embeddings.shape}"
@@ -60,6 +58,8 @@ def run_clustering(
     assert embeddings.shape[1] == EMBEDDING_DIM, (
         f"Wrong embedding dimension: {embeddings.shape[1]} != {EMBEDDING_DIM}"
     )
+
+    import hdbscan
 
     n_patents = embeddings.shape[0]
 
@@ -75,7 +75,8 @@ def run_clustering(
             min_samples=current_params["min_samples"],
             metric="euclidean",
             cluster_selection_method="eom",
-            prediction_data=True,
+            core_dist_n_jobs=1,
+            algorithm="generic",
         )
         labels = clusterer.fit_predict(embeddings)
         probabilities = clusterer.probabilities_

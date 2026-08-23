@@ -15,7 +15,7 @@ celery_app = Celery(
     "patent_gap_finder",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["patent_gap_finder.workers.search_tasks"],
+    include=["workers.search_tasks"],
 )
 
 celery_app.conf.update(

@@ -10,7 +10,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from patent_gap_finder.db.models import ExtractedClaim, PatentRecord
+    from db.models import ExtractedClaim, PatentRecord
 
 MAX_TEXT_LENGTH = 512
 

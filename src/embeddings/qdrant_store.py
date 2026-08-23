@@ -29,6 +29,7 @@ def get_qdrant_client():
     global _client_instance
     if _client_instance is None:
         try:
+            # pyrefly: ignore [missing-import]
             from qdrant_client import AsyncQdrantClient
             url = os.environ.get("QDRANT_URL", QDRANT_URL_DEFAULT)
             api_key = os.environ.get("QDRANT_API_KEY", None) or None
@@ -54,6 +55,7 @@ async def ensure_collection_exists() -> None:
     Idempotent — safe to call on every startup.
     Uses cosine distance with on_disk_payload for RAM efficiency.
     """
+    # pyrefly: ignore [missing-import]
     from qdrant_client.models import Distance, VectorParams
 
     client = get_qdrant_client()
@@ -95,6 +97,7 @@ async def upsert_patent_embeddings(
     Returns:
         Count of upserted points.
     """
+    # pyrefly: ignore [missing-import]
     from qdrant_client.models import PointStruct
 
     client = get_qdrant_client()
@@ -140,6 +143,7 @@ async def search_similar(
     Returns:
         List of ScoredPoint results.
     """
+    # pyrefly: ignore [missing-import]
     from qdrant_client.models import (
         FieldCondition,
         Filter,
@@ -198,6 +202,7 @@ async def get_all_session_embeddings(
     Returns:
         (patent_db_ids, embeddings) where embeddings has shape (n, 384).
     """
+    # pyrefly: ignore [missing-import]
     from qdrant_client.models import FieldCondition, Filter, MatchValue
 
     client = get_qdrant_client()

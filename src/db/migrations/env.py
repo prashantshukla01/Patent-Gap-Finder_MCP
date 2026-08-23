@@ -15,10 +15,10 @@ from alembic import context
 from sqlalchemy import create_engine, engine_from_config, pool
 
 # Add src to path so models can be imported
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # Import all models so Base.metadata has them registered
-from patent_gap_finder.db.models import Base  # noqa: E402
+from db.models import Base  # noqa: E402
 
 # Alembic Config object
 config = context.config

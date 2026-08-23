@@ -12,7 +12,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from patent_gap_finder.models.paper import CandidateClaim, ParsedSection
+    from models.paper import CandidateClaim, ParsedSection
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -371,7 +371,7 @@ def extract_candidate_claims(
     Returns:
         List of :class:`CandidateClaim` sorted by confidence descending.
     """
-    from patent_gap_finder.models.paper import CandidateClaim as ClaimModel
+    from models.paper import CandidateClaim as ClaimModel
 
     scored: list[tuple[float, str, str, str]] = []  # (score, text, section, type)
 

@@ -14,7 +14,7 @@ from typing import Optional
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.db.models import ExtractedClaim
+from db.models import ExtractedClaim
 
 logger = logging.getLogger(__name__)
 

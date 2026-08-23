@@ -14,8 +14,8 @@ from typing import Optional
 
 import httpx
 
-from patent_gap_finder.models.paper import ParsedPaper
-from patent_gap_finder.parsers.pdf_parser import parse_pdf
+from models.paper import ParsedPaper
+from parsers.pdf_parser import parse_pdf
 
 logger = logging.getLogger(__name__)
 

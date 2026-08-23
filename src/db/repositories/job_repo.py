@@ -9,7 +9,7 @@ from typing import Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.db.models import SearchJob
+from db.models import SearchJob
 
 logger = logging.getLogger(__name__)
 

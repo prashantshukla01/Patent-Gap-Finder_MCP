@@ -120,7 +120,7 @@ async def init_db() -> None:
         except Exception as e:
             logger.warning("Alembic migration failed, falling back to create_all: %s", e)
             try:
-                from patent_gap_finder.db.models import Base
+                from db.models import Base
                 engine = _get_engine()
                 async with engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
@@ -139,13 +139,13 @@ async def init_db() -> None:
                     class_=AsyncSession,
                     expire_on_commit=False,
                 )
-                from patent_gap_finder.db.models import Base
+                from db.models import Base
                 async with _engine.begin() as conn:
                     await conn.run_sync(Base.metadata.create_all)
                 logger.info("Database initialized with SQLite fallback")
     else:
         # SQLite or other — use create_all directly
-        from patent_gap_finder.db.models import Base
+        from db.models import Base
         engine = _get_engine()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

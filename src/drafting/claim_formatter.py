@@ -10,7 +10,7 @@ import re
 import logging
 from typing import Optional
 
-from patent_gap_finder.models.drafts import DraftedClaim
+from models.drafts import DraftedClaim
 
 logger = logging.getLogger(__name__)
 

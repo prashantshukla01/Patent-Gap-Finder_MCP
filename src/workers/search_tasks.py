@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 
-from patent_gap_finder.workers.celery_app import celery_app
+from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def _get_sync_session():
 def _update_job_status_sync(job_id: str, status: str, error: str = None) -> None:
     """Update SearchJob status using sync DB session."""
     try:
-        from patent_gap_finder.db.models import SearchJob
+        from db.models import SearchJob
         session = _get_sync_session()
         try:
             values = {
@@ -99,7 +99,7 @@ def run_patent_search(
         asyncio.set_event_loop(loop)
 
         try:
-            from patent_gap_finder.search.search_coordinator import coordinate_search
+            from search.search_coordinator import coordinate_search
 
             result = loop.run_until_complete(
                 coordinate_search(
@@ -127,8 +127,8 @@ def run_patent_search(
         _update_job_status_sync(job_id, "failed", str(exc))
 
         # Retry on certain recoverable errors
-        from patent_gap_finder.search.epo_client import EPOQuotaError
-        from patent_gap_finder.search.uspto_client import USPTOTimeoutError
+        from search.epo_client import EPOQuotaError
+        from search.uspto_client import USPTOTimeoutError
 
         if isinstance(exc, (USPTOTimeoutError, EPOQuotaError)):
             raise self.retry(exc=exc, countdown=30)

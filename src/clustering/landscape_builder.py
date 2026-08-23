@@ -19,16 +19,16 @@ from typing import Optional
 import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.clustering.hdbscan_clusterer import (
+from clustering.hdbscan_clusterer import (
     compute_centroids,
     compute_intra_cluster_similarity,
     find_centroid_patents,
     run_clustering,
 )
-from patent_gap_finder.embeddings import qdrant_store
-from patent_gap_finder.embeddings.embedding_engine import encode_texts
-from patent_gap_finder.embeddings.text_preparer import batch_prepare_patents
-from patent_gap_finder.models.landscape import ClusterInfo, LandscapeMap
+from embeddings import qdrant_store
+from embeddings.embedding_engine import encode_texts
+from embeddings.text_preparer import batch_prepare_patents
+from models.landscape import ClusterInfo, LandscapeMap
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ async def build_landscape(
     Returns:
         Complete LandscapeMap with clusters and metadata.
     """
-    from patent_gap_finder.db.repositories import patent_repo
+    from db.repositories import patent_repo
 
     # Step 1 — Load patents
     patents = await patent_repo.get_patents_for_session(db, session_id)

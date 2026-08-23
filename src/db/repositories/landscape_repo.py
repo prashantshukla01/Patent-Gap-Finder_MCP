@@ -10,12 +10,12 @@ from typing import Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patent_gap_finder.db.models import (
+from db.models import (
     ClusterRecord,
     LandscapeJob,
     WhitespaceOpportunityRecord,
 )
-from patent_gap_finder.models.landscape import ClusterInfo, WhitespaceOpportunity
+from models.landscape import ClusterInfo, WhitespaceOpportunity
 
 logger = logging.getLogger(__name__)
 
