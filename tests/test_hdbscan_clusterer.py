@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from unittest.mock import patch, MagicMock
 
-from patent_gap_finder.clustering.hdbscan_clusterer import (
+from clustering.hdbscan_clusterer import (
     compute_centroids,
     compute_intra_cluster_similarity,
     find_centroid_patents,
@@ -39,19 +39,20 @@ class TestSelectHdbscanParams:
 
 class TestRunClustering:
     def test_returns_correct_shapes(self):
-        # Create synthetic data with clear clusters
-        rng = np.random.default_rng(42)
-        c1 = rng.normal(loc=[1, 0, 0] + [0] * 381, scale=0.1, size=(20, 384))
-        c2 = rng.normal(loc=[0, 1, 0] + [0] * 381, scale=0.1, size=(20, 384))
-        c3 = rng.normal(loc=[0, 0, 1] + [0] * 381, scale=0.1, size=(20, 384))
-        embeddings = np.vstack([c1, c2, c3]).astype(np.float32)
+        mock_hdbscan = MagicMock()
+        mock_instance = MagicMock()
+        mock_instance.fit_predict.return_value = np.array([0] * 20 + [1] * 20 + [2] * 20)
+        mock_instance.probabilities_ = np.ones(60)
+        mock_hdbscan.HDBSCAN.return_value = mock_instance
 
-        labels, probabilities, params = run_clustering(embeddings)
+        with patch.dict("sys.modules", {"hdbscan": mock_hdbscan}):
+            embeddings = np.random.rand(60, 384).astype(np.float32)
+            labels, probabilities, params = run_clustering(embeddings)
 
-        assert labels.shape == (60,)
-        assert probabilities.shape == (60,)
-        assert isinstance(params, dict)
-        assert "min_cluster_size" in params
+            assert labels.shape == (60,)
+            assert probabilities.shape == (60,)
+            assert isinstance(params, dict)
+            assert "min_cluster_size" in params
 
     def test_rejects_1d_array(self):
         embeddings = np.random.rand(384).astype(np.float32)
@@ -65,23 +66,24 @@ class TestRunClustering:
 
     def test_fallback_when_all_noise(self):
         """When HDBSCAN returns all noise, it retries with lower min_cluster_size."""
-        import hdbscan
+        mock_hdbscan = MagicMock()
+        mock_instance_0 = MagicMock()
+        mock_instance_0.fit_predict.return_value = np.full(15, -1)
+        mock_instance_0.probabilities_ = np.zeros(15)
 
-        call_count = [0]
-        original_init = hdbscan.HDBSCAN.__init__
+        mock_instance_1 = MagicMock()
+        mock_instance_1.fit_predict.return_value = np.array([0] * 5 + [1] * 5 + [-1] * 5)
+        mock_instance_1.probabilities_ = np.ones(15)
 
-        # We can't easily mock HDBSCAN to return all noise, so test the params
-        # fallback by giving very sparse data
-        rng = np.random.default_rng(123)
-        # Sparse random data — likely to produce all noise
-        embeddings = rng.uniform(-10, 10, size=(15, 384)).astype(np.float32)
+        mock_hdbscan.HDBSCAN.side_effect = [mock_instance_0, mock_instance_1]
 
-        labels, probs, params = run_clustering(embeddings)
+        with patch.dict("sys.modules", {"hdbscan": mock_hdbscan}):
+            embeddings = np.random.rand(15, 384).astype(np.float32)
+            labels, probs, params = run_clustering(embeddings)
 
-        # Should have attempted fallback (min_cluster_size reduced)
-        assert labels.shape == (15,)
-        # The params should reflect any fallback attempts
-        assert params["min_cluster_size"] >= 2
+            assert mock_hdbscan.HDBSCAN.call_count == 2
+            assert labels.shape == (15,)
+            assert params["min_cluster_size"] == 2
 
 
 class TestComputeCentroids:

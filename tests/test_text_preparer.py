@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from patent_gap_finder.embeddings.text_preparer import (
+from embeddings.text_preparer import (
     batch_prepare_claims,
     batch_prepare_patents,
     clean_text,

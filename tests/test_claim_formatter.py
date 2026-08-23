@@ -1,7 +1,7 @@
 import pytest
 
-from patent_gap_finder.models.drafts import DraftedClaim
-from patent_gap_finder.drafting.claim_formatter import format_claim_set, validate_claim_set
+from models.drafts import DraftedClaim
+from drafting.claim_formatter import format_claim_set, validate_claim_set
 
 
 @pytest.fixture

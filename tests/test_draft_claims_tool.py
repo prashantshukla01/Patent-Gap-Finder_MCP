@@ -2,7 +2,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from patent_gap_finder.tools.draft_claims import draft_claims
+from tools.draft_claims import draft_claims
 
 
 @pytest.fixture
@@ -33,9 +33,9 @@ def sample_opportunities():
 @pytest.mark.asyncio
 async def test_draft_claims_success(mock_session, sample_opportunities):
     sess_id = "00000000-0000-0000-0000-000000000001"
-    with patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_get_opps, \
-         patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_get_patents, \
-         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_get_opps, \
+         patch("db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_get_patents, \
+         patch("db.connection.get_db_session") as mock_db:
         
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm
@@ -59,7 +59,7 @@ async def test_draft_claims_phase4_incomplete(mock_session):
     sess_id = "00000000-0000-0000-0000-000000000001"
     mock_session.whitespace_analysis_complete = False
     
-    with patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("db.connection.get_db_session") as mock_db:
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm
         mock_result = MagicMock()
@@ -75,8 +75,8 @@ async def test_draft_claims_phase4_incomplete(mock_session):
 @pytest.mark.asyncio
 async def test_draft_claims_no_opportunities(mock_session):
     sess_id = "00000000-0000-0000-0000-000000000001"
-    with patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_get_opps, \
-         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_get_opps, \
+         patch("db.connection.get_db_session") as mock_db:
         
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm

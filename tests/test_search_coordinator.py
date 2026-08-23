@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from patent_gap_finder.models.patent import Patent, PatentSource
+from models.patent import Patent, PatentSource
 
 
 @pytest.fixture
 def mock_redis():
     """Mock Redis client."""
-    with patch("patent_gap_finder.search.search_coordinator.get_redis_client") as m:
+    with patch("search.search_coordinator.get_redis_client") as m:
         client = AsyncMock()
         client.get_cached.return_value = None
         client.set_cached = AsyncMock()
@@ -24,7 +24,7 @@ def mock_redis():
 def mock_persist():
     """Mock _persist_results."""
     with patch(
-        "patent_gap_finder.search.search_coordinator._persist_results",
+        "search.search_coordinator._persist_results",
         new_callable=AsyncMock,
     ) as m:
         yield m
@@ -45,14 +45,14 @@ def _make_patent(id: str, source: PatentSource = PatentSource.USPTO) -> dict:
 
 
 class TestCoordinateSearch:
-    @patch("patent_gap_finder.search.search_coordinator.serpapi_mod")
-    @patch("patent_gap_finder.search.search_coordinator.epo_mod")
-    @patch("patent_gap_finder.search.search_coordinator.uspto_mod")
+    @patch("search.search_coordinator.serpapi_mod")
+    @patch("search.search_coordinator.epo_mod")
+    @patch("search.search_coordinator.uspto_mod")
     async def test_both_cached_no_api_calls(
         self, mock_uspto, mock_epo, mock_serpapi, mock_redis, mock_persist
     ):
         """When both sources are cached, no API calls should be made."""
-        from patent_gap_finder.search.search_coordinator import coordinate_search
+        from search.search_coordinator import coordinate_search
 
         # Set up cache hits
         mock_redis.get_cached.side_effect = [
@@ -70,14 +70,14 @@ class TestCoordinateSearch:
         mock_uspto.search.assert_not_called()
         mock_epo.get_epo_client.assert_not_called()
 
-    @patch("patent_gap_finder.search.search_coordinator.serpapi_mod")
-    @patch("patent_gap_finder.search.search_coordinator.epo_mod")
-    @patch("patent_gap_finder.search.search_coordinator.uspto_mod")
+    @patch("search.search_coordinator.serpapi_mod")
+    @patch("search.search_coordinator.epo_mod")
+    @patch("search.search_coordinator.uspto_mod")
     async def test_uspto_cached_epo_missed(
         self, mock_uspto, mock_epo, mock_serpapi, mock_redis, mock_persist
     ):
         """When USPTO cached but EPO missed, only EPO client called."""
-        from patent_gap_finder.search.search_coordinator import coordinate_search
+        from search.search_coordinator import coordinate_search
 
         patents_cached = [
             {"patent_id": f"US-{i}", "title": f"P{i}", "source": "uspto"}
@@ -105,14 +105,14 @@ class TestCoordinateSearch:
         mock_uspto.search.assert_not_called()
         epo_client.search.assert_called_once()
 
-    @patch("patent_gap_finder.search.search_coordinator.serpapi_mod")
-    @patch("patent_gap_finder.search.search_coordinator.epo_mod")
-    @patch("patent_gap_finder.search.search_coordinator.uspto_mod")
+    @patch("search.search_coordinator.serpapi_mod")
+    @patch("search.search_coordinator.epo_mod")
+    @patch("search.search_coordinator.uspto_mod")
     async def test_uspto_fails_epo_still_returns(
         self, mock_uspto, mock_epo, mock_serpapi, mock_redis, mock_persist
     ):
         """If USPTO fails, EPO results should still be returned."""
-        from patent_gap_finder.search.search_coordinator import coordinate_search
+        from search.search_coordinator import coordinate_search
 
         mock_redis.get_cached.return_value = None
 
@@ -132,14 +132,14 @@ class TestCoordinateSearch:
 
         assert result.total_found >= 1
 
-    @patch("patent_gap_finder.search.search_coordinator.serpapi_mod")
-    @patch("patent_gap_finder.search.search_coordinator.epo_mod")
-    @patch("patent_gap_finder.search.search_coordinator.uspto_mod")
+    @patch("search.search_coordinator.serpapi_mod")
+    @patch("search.search_coordinator.epo_mod")
+    @patch("search.search_coordinator.uspto_mod")
     async def test_serpapi_called_when_under_30(
         self, mock_uspto, mock_epo, mock_serpapi, mock_redis, mock_persist
     ):
         """SerpAPI should be called when total < 30."""
-        from patent_gap_finder.search.search_coordinator import coordinate_search
+        from search.search_coordinator import coordinate_search
 
         mock_redis.get_cached.return_value = None
 
@@ -167,14 +167,14 @@ class TestCoordinateSearch:
 
         mock_serpapi.search.assert_called_once()
 
-    @patch("patent_gap_finder.search.search_coordinator.serpapi_mod")
-    @patch("patent_gap_finder.search.search_coordinator.epo_mod")
-    @patch("patent_gap_finder.search.search_coordinator.uspto_mod")
+    @patch("search.search_coordinator.serpapi_mod")
+    @patch("search.search_coordinator.epo_mod")
+    @patch("search.search_coordinator.uspto_mod")
     async def test_serpapi_not_called_when_over_30(
         self, mock_uspto, mock_epo, mock_serpapi, mock_redis, mock_persist
     ):
         """SerpAPI should NOT be called when total >= 30."""
-        from patent_gap_finder.search.search_coordinator import coordinate_search
+        from search.search_coordinator import coordinate_search
 
         mock_redis.get_cached.return_value = None
 

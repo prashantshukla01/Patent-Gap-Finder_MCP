@@ -21,7 +21,7 @@ def _mock_qdrant_client():
 
 class TestEnsureCollectionExists:
     async def test_creates_collection_when_missing(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
         mod._client_instance = mock_client
@@ -33,7 +33,7 @@ class TestEnsureCollectionExists:
             mod._client_instance = old
 
     async def test_idempotent_when_exists(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
 
@@ -52,7 +52,7 @@ class TestEnsureCollectionExists:
 
 class TestUpsertPatentEmbeddings:
     async def test_upserts_correct_count(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
         mod._client_instance = mock_client
@@ -69,7 +69,7 @@ class TestUpsertPatentEmbeddings:
             mod._client_instance = old
 
     async def test_batches_at_500(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
         mod._client_instance = mock_client
@@ -89,7 +89,7 @@ class TestUpsertPatentEmbeddings:
 
 class TestSearchSimilar:
     async def test_passes_session_filter(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
         mock_client.search.return_value = []
@@ -106,7 +106,7 @@ class TestSearchSimilar:
             mod._client_instance = old
 
     async def test_connection_failure_returns_empty(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
         mock_client.search.side_effect = ConnectionError("down")
@@ -122,7 +122,7 @@ class TestSearchSimilar:
 
 class TestGetAllSessionEmbeddings:
     async def test_paginates_correctly(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
 
@@ -150,7 +150,7 @@ class TestGetAllSessionEmbeddings:
             mod._client_instance = old
 
     async def test_empty_result(self):
-        import patent_gap_finder.embeddings.qdrant_store as mod
+        import embeddings.qdrant_store as mod
         old = mod._client_instance
         mock_client = _mock_qdrant_client()
         mock_client.scroll.return_value = ([], None)

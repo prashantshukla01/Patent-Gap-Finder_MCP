@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from patent_gap_finder.models.patent import Patent, PatentSource
-from patent_gap_finder.search.normalizer import (
+from models.patent import Patent, PatentSource
+from search.normalizer import (
     _normalize_patent_number,
     _title_similarity,
     build_search_result,

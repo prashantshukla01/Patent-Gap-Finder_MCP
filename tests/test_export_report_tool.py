@@ -3,7 +3,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from patent_gap_finder.tools.export_report import export_report
+from tools.export_report import export_report
 
 SESS_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -21,8 +21,8 @@ def mock_session():
 async def test_export_report_success(mock_session):
     pdf_bytes = b"%PDF-test-bytes"
     
-    with patch("patent_gap_finder.reporting.pdf_report.generate_report", new_callable=AsyncMock) as mock_generate, \
-         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("reporting.pdf_report.generate_report", new_callable=AsyncMock) as mock_generate, \
+         patch("db.connection.get_db_session") as mock_db:
         
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm
@@ -44,8 +44,8 @@ async def test_export_report_success(mock_session):
 async def test_export_report_claims_not_drafted(mock_session):
     mock_session.claims_drafted = False
     
-    with patch("patent_gap_finder.reporting.pdf_report.generate_report", new_callable=AsyncMock) as mock_generate, \
-         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("reporting.pdf_report.generate_report", new_callable=AsyncMock) as mock_generate, \
+         patch("db.connection.get_db_session") as mock_db:
         
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm
@@ -62,7 +62,7 @@ async def test_export_report_claims_not_drafted(mock_session):
 
 @pytest.mark.asyncio
 async def test_export_report_session_not_found():
-    with patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("db.connection.get_db_session") as mock_db:
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm
         mock_result = MagicMock()

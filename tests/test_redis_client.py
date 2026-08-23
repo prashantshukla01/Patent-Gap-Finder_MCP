@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from patent_gap_finder.cache.redis_client import RedisClient
+from cache.redis_client import RedisClient
 
 
 class TestBuildCacheKey:

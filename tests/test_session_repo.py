@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from patent_gap_finder.db.connection import get_db_session, init_db, reset_db
-from patent_gap_finder.db.models import AnalysisSession
+from db.connection import get_db_session, init_db, reset_db
+from db.models import AnalysisSession
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ class TestCreateSession:
     @pytest.mark.asyncio
     async def test_creates_session_with_uuid(self) -> None:
         """Created session should have an auto-generated UUID."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             session = await session_repo.create_session(db, {
@@ -55,7 +55,7 @@ class TestCreateSession:
     @pytest.mark.asyncio
     async def test_default_status_is_parsing(self) -> None:
         """New sessions should default to 'parsing' status."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             session = await session_repo.create_session(db, {
@@ -72,7 +72,7 @@ class TestGetSession:
     @pytest.mark.asyncio
     async def test_returns_none_for_unknown_id(self) -> None:
         """Should return None for a non-existent session ID."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             result = await session_repo.get_session(
@@ -84,7 +84,7 @@ class TestGetSession:
     @pytest.mark.asyncio
     async def test_retrieves_created_session(self) -> None:
         """Should retrieve a previously created session."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             created = await session_repo.create_session(db, {
@@ -105,7 +105,7 @@ class TestGetSessionByFileHash:
     @pytest.mark.asyncio
     async def test_finds_existing_session(self) -> None:
         """Should find a session by its file hash."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             await session_repo.create_session(db, {
@@ -124,7 +124,7 @@ class TestGetSessionByFileHash:
     @pytest.mark.asyncio
     async def test_returns_none_for_unknown_hash(self) -> None:
         """Should return None for an unknown file hash."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             result = await session_repo.get_session_by_file_hash(
@@ -140,7 +140,7 @@ class TestUpdateSessionStatus:
     @pytest.mark.asyncio
     async def test_changes_status(self) -> None:
         """Should update the session status field."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             session = await session_repo.create_session(db, {
@@ -166,7 +166,7 @@ class TestIncrementRequestCounter:
     @pytest.mark.asyncio
     async def test_increments_correctly(self) -> None:
         """Counter should accumulate across multiple increments."""
-        from patent_gap_finder.db.repositories import session_repo
+        from db.repositories import session_repo
 
         async with get_db_session() as db:
             session = await session_repo.create_session(db, {

@@ -22,13 +22,13 @@ def _fake_db_session(mock_session=None):
 
 class TestFindWhitespaceTool:
     async def test_invalid_session_id(self):
-        from patent_gap_finder.tools.find_whitespace import find_whitespace
+        from tools.find_whitespace import find_whitespace
         result = await find_whitespace("not-a-uuid")
         assert result["error"] == "INVALID_SESSION_ID"
 
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("db.connection.get_db_session")
     async def test_session_not_found(self, mock_db):
-        from patent_gap_finder.tools.find_whitespace import find_whitespace
+        from tools.find_whitespace import find_whitespace
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)
@@ -40,9 +40,9 @@ class TestFindWhitespaceTool:
         result = await find_whitespace("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "SESSION_NOT_FOUND"
 
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("db.connection.get_db_session")
     async def test_landscape_incomplete(self, mock_db):
-        from patent_gap_finder.tools.find_whitespace import find_whitespace
+        from tools.find_whitespace import find_whitespace
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)
@@ -57,10 +57,10 @@ class TestFindWhitespaceTool:
         result = await find_whitespace("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "PHASE4_LANDSCAPE_INCOMPLETE"
 
-    @patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
+    @patch("db.connection.get_db_session")
     async def test_no_ai_claims(self, mock_db, mock_latest_job):
-        from patent_gap_finder.tools.find_whitespace import find_whitespace
+        from tools.find_whitespace import find_whitespace
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)
@@ -94,19 +94,19 @@ class TestFindWhitespaceTool:
         result = await find_whitespace("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "NO_AI_CLAIMS"
 
-    @patch("patent_gap_finder.clustering.whitespace_detector.detect_whitespace", new_callable=AsyncMock)
-    @patch("patent_gap_finder.clustering.hdbscan_clusterer.compute_centroids")
-    @patch("patent_gap_finder.embeddings.qdrant_store.get_all_session_embeddings", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.repositories.landscape_repo.create_whitespace_opportunities", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("clustering.whitespace_detector.detect_whitespace", new_callable=AsyncMock)
+    @patch("clustering.hdbscan_clusterer.compute_centroids")
+    @patch("embeddings.qdrant_store.get_all_session_embeddings", new_callable=AsyncMock)
+    @patch("db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock)
+    @patch("db.repositories.landscape_repo.create_whitespace_opportunities", new_callable=AsyncMock)
+    @patch("db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
+    @patch("db.connection.get_db_session")
     async def test_top_opportunity_count(
         self, mock_db, mock_latest_job, mock_create_opp,
         mock_get_patents, mock_get_emb, mock_centroids, mock_detect
     ):
-        from patent_gap_finder.tools.find_whitespace import find_whitespace
-        from patent_gap_finder.models.landscape import WhitespaceOpportunity
+        from tools.find_whitespace import find_whitespace
+        from models.landscape import WhitespaceOpportunity
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)

@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from patent_gap_finder.search import uspto_client
-from patent_gap_finder.search.uspto_client import (
+from search import uspto_client
+from search.uspto_client import (
     USPTOAPIError,
     USPTOTimeoutError,
     _build_query,
@@ -181,7 +181,7 @@ class TestSearchWithKey:
         monkeypatch.setenv("LENS_API_KEY", "test-key-abc")
         uspto_client._semaphore = asyncio.Semaphore(2)
 
-    @patch("patent_gap_finder.search.uspto_client._make_request")
+    @patch("search.uspto_client._make_request")
     async def test_returns_mapped_patents(self, mock_req):
         mock_req.return_value = _mock_lens_response([_sample_hit("1"), _sample_hit("2")], total=2)
 
@@ -191,7 +191,7 @@ class TestSearchWithKey:
         assert len(result) == 2
         assert result[0]["patent_title"] == "Patent 1"
 
-    @patch("patent_gap_finder.search.uspto_client._make_request")
+    @patch("search.uspto_client._make_request")
     async def test_respects_max_results(self, mock_req):
         hits = [_sample_hit(str(i)) for i in range(50)]
         mock_req.return_value = _mock_lens_response(hits, total=200)
@@ -201,7 +201,7 @@ class TestSearchWithKey:
 
         assert len(result) == 30
 
-    @patch("patent_gap_finder.search.uspto_client._make_request")
+    @patch("search.uspto_client._make_request")
     async def test_empty_result(self, mock_req):
         mock_req.return_value = _mock_lens_response([], total=0)
 

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from starlette.responses import Response
 
-from patent_gap_finder.middleware.auth import APIKeyMiddleware
+from middleware.auth import APIKeyMiddleware
 
 
 @pytest.fixture

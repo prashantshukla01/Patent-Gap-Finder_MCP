@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from patent_gap_finder.models.landscape import ClusterInfo, LandscapeMap
+from models.landscape import ClusterInfo, LandscapeMap
 
 
 def _fake_db_session(mock_session=None):
@@ -23,27 +23,27 @@ def _fake_db_session(mock_session=None):
 
 class TestMapLandscapeTool:
     async def test_invalid_session_id(self):
-        from patent_gap_finder.tools.map_landscape import map_landscape
+        from tools.map_landscape import map_landscape
         result = await map_landscape("not-a-uuid")
         assert result["error"] == "INVALID_SESSION_ID"
 
     async def test_qdrant_unavailable(self):
         """Qdrant connection failure returns structured error."""
-        from patent_gap_finder.tools.map_landscape import map_landscape
+        from tools.map_landscape import map_landscape
 
         with patch.dict("sys.modules", {}):
             with patch(
-                "patent_gap_finder.embeddings.qdrant_store.ensure_collection_exists",
+                "embeddings.qdrant_store.ensure_collection_exists",
                 new_callable=AsyncMock,
                 side_effect=Exception("Connection refused"),
             ):
                 result = await map_landscape("12345678-1234-1234-1234-123456789abc")
                 assert result["error"] == "QDRANT_UNAVAILABLE"
 
-    @patch("patent_gap_finder.embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
+    @patch("db.connection.get_db_session")
     async def test_session_not_found(self, mock_db, mock_qdrant):
-        from patent_gap_finder.tools.map_landscape import map_landscape
+        from tools.map_landscape import map_landscape
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)
@@ -55,10 +55,10 @@ class TestMapLandscapeTool:
         result = await map_landscape("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "SESSION_NOT_FOUND"
 
-    @patch("patent_gap_finder.embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
+    @patch("db.connection.get_db_session")
     async def test_phase3_incomplete(self, mock_db, mock_qdrant):
-        from patent_gap_finder.tools.map_landscape import map_landscape
+        from tools.map_landscape import map_landscape
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)
@@ -73,11 +73,11 @@ class TestMapLandscapeTool:
         result = await map_landscape("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "PHASE3_INCOMPLETE"
 
-    @patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
-    @patch("patent_gap_finder.embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
+    @patch("embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
+    @patch("db.connection.get_db_session")
     async def test_existing_landscape_returns_cached(self, mock_db, mock_qdrant, mock_latest_job):
-        from patent_gap_finder.tools.map_landscape import map_landscape
+        from tools.map_landscape import map_landscape
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)
@@ -103,18 +103,18 @@ class TestMapLandscapeTool:
         assert result["status"] == "complete"
         assert "already built" in result.get("note", "")
 
-    @patch("patent_gap_finder.clustering.landscape_builder.build_landscape", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.repositories.landscape_repo.update_landscape_job_status", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.repositories.landscape_repo.create_landscape_job", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
-    @patch("patent_gap_finder.embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
-    @patch("patent_gap_finder.db.connection.get_db_session")
+    @patch("clustering.landscape_builder.build_landscape", new_callable=AsyncMock)
+    @patch("db.repositories.landscape_repo.update_landscape_job_status", new_callable=AsyncMock)
+    @patch("db.repositories.landscape_repo.create_landscape_job", new_callable=AsyncMock)
+    @patch("db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock)
+    @patch("embeddings.qdrant_store.ensure_collection_exists", new_callable=AsyncMock)
+    @patch("db.connection.get_db_session")
     async def test_insufficient_patents(
         self, mock_db, mock_qdrant, mock_latest_job,
         mock_create_job, mock_update_status, mock_build
     ):
-        from patent_gap_finder.tools.map_landscape import map_landscape
-        from patent_gap_finder.clustering.landscape_builder import InsufficientPatentsError
+        from tools.map_landscape import map_landscape
+        from clustering.landscape_builder import InsufficientPatentsError
 
         mock_session_db = AsyncMock()
         mock_db.side_effect = _fake_db_session(mock_session_db)

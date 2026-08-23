@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import patch, AsyncMock
 
-from patent_gap_finder.server import mcp
+from server import mcp
 
 # In a real environment with live services, we'd actually call the real functions.
 # However, integration tests running in CI usually rely on either spun-up docker
@@ -21,18 +21,18 @@ async def test_full_pipeline_arxiv_paper():
     are simulated with mock data since no LLM is available in tests.
     """
     try:
-        from patent_gap_finder.tools.parse_paper import parse_paper
-        from patent_gap_finder.tools.save_claims import save_claims
-        from patent_gap_finder.tools.classify_ipc import classify_ipc
-        from patent_gap_finder.tools.save_classification import save_classification
-        from patent_gap_finder.tools.search_prior_art import search_prior_art
-        from patent_gap_finder.tools.get_search_status import get_search_status
-        from patent_gap_finder.tools.map_landscape import map_landscape
-        from patent_gap_finder.tools.find_whitespace import find_whitespace
-        from patent_gap_finder.tools.save_whitespace import save_whitespace
-        from patent_gap_finder.tools.draft_claims import draft_claims
-        from patent_gap_finder.tools.save_drafted_claims import save_drafted_claims
-        from patent_gap_finder.tools.export_report import export_report
+        from tools.parse_paper import parse_paper
+        from tools.save_claims import save_claims
+        from tools.classify_ipc import classify_ipc
+        from tools.save_classification import save_classification
+        from tools.search_prior_art import search_prior_art
+        from tools.get_search_status import get_search_status
+        from tools.map_landscape import map_landscape
+        from tools.find_whitespace import find_whitespace
+        from tools.save_whitespace import save_whitespace
+        from tools.draft_claims import draft_claims
+        from tools.save_drafted_claims import save_drafted_claims
+        from tools.export_report import export_report
     except ImportError:
         pytest.skip("Project not fully initialized or import error")
 
@@ -163,7 +163,7 @@ async def test_full_pipeline_arxiv_paper():
     assert pdf_bytes.startswith(b"%PDF")
 
     # Step 13: get_session
-    from patent_gap_finder.tools.get_session import get_session
+    from tools.get_session import get_session
     final_session = await get_session(session_id)
     assert final_session["status"] == "complete"
     assert final_session["claims_drafted"] is True

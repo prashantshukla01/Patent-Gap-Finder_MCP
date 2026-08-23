@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from patent_gap_finder.parsers.arxiv_parser import (
+from parsers.arxiv_parser import (
     extract_arxiv_id,
     fetch_arxiv_metadata,
     is_arxiv_source,

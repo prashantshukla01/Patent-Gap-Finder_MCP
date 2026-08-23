@@ -22,15 +22,15 @@ def _fake_db_session(mock_session=None):
 
 class TestSearchPriorArtTool:
     async def test_invalid_session_id(self):
-        from patent_gap_finder.tools.search_prior_art import search_prior_art
+        from tools.search_prior_art import search_prior_art
 
         result = await search_prior_art("not-a-uuid")
         assert result["error"] == "INVALID_SESSION_ID"
 
-    @patch("patent_gap_finder.tools.search_prior_art.get_db_session")
-    @patch("patent_gap_finder.tools.search_prior_art.session_repo")
+    @patch("tools.search_prior_art.get_db_session")
+    @patch("tools.search_prior_art.session_repo")
     async def test_session_not_found(self, mock_srepo, mock_db):
-        from patent_gap_finder.tools.search_prior_art import search_prior_art
+        from tools.search_prior_art import search_prior_art
 
         mock_db.side_effect = _fake_db_session()
         mock_srepo.get_session = AsyncMock(return_value=None)
@@ -38,11 +38,11 @@ class TestSearchPriorArtTool:
         result = await search_prior_art("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "SESSION_NOT_FOUND"
 
-    @patch("patent_gap_finder.tools.search_prior_art.get_db_session")
-    @patch("patent_gap_finder.tools.search_prior_art.job_repo")
-    @patch("patent_gap_finder.tools.search_prior_art.session_repo")
+    @patch("tools.search_prior_art.get_db_session")
+    @patch("tools.search_prior_art.job_repo")
+    @patch("tools.search_prior_art.session_repo")
     async def test_phase2_incomplete(self, mock_srepo, mock_jrepo, mock_db):
-        from patent_gap_finder.tools.search_prior_art import search_prior_art
+        from tools.search_prior_art import search_prior_art
 
         session = MagicMock()
         session.top_ipc_codes = None
@@ -54,11 +54,11 @@ class TestSearchPriorArtTool:
         result = await search_prior_art("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "PHASE2_INCOMPLETE"
 
-    @patch("patent_gap_finder.tools.search_prior_art.get_db_session")
-    @patch("patent_gap_finder.tools.search_prior_art.job_repo")
-    @patch("patent_gap_finder.tools.search_prior_art.session_repo")
+    @patch("tools.search_prior_art.get_db_session")
+    @patch("tools.search_prior_art.job_repo")
+    @patch("tools.search_prior_art.session_repo")
     async def test_existing_complete_job(self, mock_srepo, mock_jrepo, mock_db):
-        from patent_gap_finder.tools.search_prior_art import search_prior_art
+        from tools.search_prior_art import search_prior_art
 
         session = MagicMock()
         session.top_ipc_codes = ["G06N 3/08"]
@@ -77,12 +77,17 @@ class TestSearchPriorArtTool:
         assert result["status"] == "complete"
         assert result["job_id"] == "job-123"
 
-    @patch("patent_gap_finder.workers.search_tasks.run_patent_search")
-    @patch("patent_gap_finder.tools.search_prior_art.get_db_session")
-    @patch("patent_gap_finder.tools.search_prior_art.job_repo")
-    @patch("patent_gap_finder.tools.search_prior_art.session_repo")
-    async def test_happy_path(self, mock_srepo, mock_jrepo, mock_db, mock_task):
-        from patent_gap_finder.tools.search_prior_art import search_prior_art
+    @patch("workers.celery_app.celery_app")
+    @patch("workers.search_tasks.run_patent_search")
+    @patch("tools.search_prior_art.get_db_session")
+    @patch("tools.search_prior_art.job_repo")
+    @patch("tools.search_prior_art.session_repo")
+    async def test_happy_path(self, mock_srepo, mock_jrepo, mock_db, mock_task, mock_celery):
+        from tools.search_prior_art import search_prior_art
+
+        mock_inspector = MagicMock()
+        mock_inspector.ping.return_value = {"worker@node": {"ok": "pong"}}
+        mock_celery.control.inspect.return_value = mock_inspector
 
         session = MagicMock()
         session.top_ipc_codes = ["G06N 3/08"]
@@ -106,13 +111,13 @@ class TestSearchPriorArtTool:
         assert result["job_id"] == "job-456"
         mock_task.delay.assert_called_once()
 
-    @patch("patent_gap_finder.search.search_coordinator.coordinate_search", new_callable=AsyncMock)
-    @patch("patent_gap_finder.workers.search_tasks.run_patent_search")
-    @patch("patent_gap_finder.tools.search_prior_art.get_db_session")
-    @patch("patent_gap_finder.tools.search_prior_art.job_repo")
-    @patch("patent_gap_finder.tools.search_prior_art.session_repo")
+    @patch("search.search_coordinator.coordinate_search", new_callable=AsyncMock)
+    @patch("workers.search_tasks.run_patent_search")
+    @patch("tools.search_prior_art.get_db_session")
+    @patch("tools.search_prior_art.job_repo")
+    @patch("tools.search_prior_art.session_repo")
     async def test_celery_unavailable_fallback(self, mock_srepo, mock_jrepo, mock_db, mock_task, mock_coord):
-        from patent_gap_finder.tools.search_prior_art import search_prior_art
+        from tools.search_prior_art import search_prior_art
 
         session = MagicMock()
         session.top_ipc_codes = ["G06N"]

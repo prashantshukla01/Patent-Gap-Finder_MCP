@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from patent_gap_finder.clustering.whitespace_detector import (
+from clustering.whitespace_detector import (
     CLUSTER_DISTANCE_THRESHOLD,
     WHITESPACE_THRESHOLD,
     find_nearest_centroid,
 )
-from patent_gap_finder.models.landscape import ClusterInfo, LandscapeMap
+from models.landscape import ClusterInfo, LandscapeMap
 
 
 def _make_claim(text="test claim", confidence=0.8, claim_type="method"):
@@ -65,11 +65,11 @@ class TestFindNearestCentroid:
 
 
 class TestDetectWhitespace:
-    @patch("patent_gap_finder.clustering.whitespace_detector.qdrant_store")
-    @patch("patent_gap_finder.clustering.whitespace_detector.encode_single")
+    @patch("clustering.whitespace_detector.qdrant_store")
+    @patch("clustering.whitespace_detector.encode_single")
     async def test_whitespace_detected(self, mock_encode, mock_qdrant):
         """Claim with low similarity and high distance → is_whitespace=True."""
-        from patent_gap_finder.clustering.whitespace_detector import detect_whitespace
+        from clustering.whitespace_detector import detect_whitespace
 
         claim_emb = np.array([1.0] + [0.0] * 383, dtype=np.float32)
         mock_encode.return_value = claim_emb
@@ -98,11 +98,11 @@ class TestDetectWhitespace:
         assert result[0].is_whitespace is True
         assert result[0].avg_neighbor_similarity == 0.35  # (0.3+0.4)/2
 
-    @patch("patent_gap_finder.clustering.whitespace_detector.qdrant_store")
-    @patch("patent_gap_finder.clustering.whitespace_detector.encode_single")
+    @patch("clustering.whitespace_detector.qdrant_store")
+    @patch("clustering.whitespace_detector.encode_single")
     async def test_high_similarity_not_whitespace(self, mock_encode, mock_qdrant):
         """Claim with high similarity → is_whitespace=False."""
-        from patent_gap_finder.clustering.whitespace_detector import detect_whitespace
+        from clustering.whitespace_detector import detect_whitespace
 
         claim_emb = np.array([1.0] + [0.0] * 383, dtype=np.float32)
         mock_encode.return_value = claim_emb
@@ -122,11 +122,11 @@ class TestDetectWhitespace:
         assert len(result) == 1
         assert result[0].is_whitespace is False
 
-    @patch("patent_gap_finder.clustering.whitespace_detector.qdrant_store")
-    @patch("patent_gap_finder.clustering.whitespace_detector.encode_single")
+    @patch("clustering.whitespace_detector.qdrant_store")
+    @patch("clustering.whitespace_detector.encode_single")
     async def test_close_to_cluster_not_whitespace(self, mock_encode, mock_qdrant):
         """Claim close to cluster centroid → not whitespace even if low similarity."""
-        from patent_gap_finder.clustering.whitespace_detector import detect_whitespace
+        from clustering.whitespace_detector import detect_whitespace
 
         claim_emb = np.array([1.0] + [0.0] * 383, dtype=np.float32)
         mock_encode.return_value = claim_emb
@@ -144,11 +144,11 @@ class TestDetectWhitespace:
 
         assert result[0].is_whitespace is False
 
-    @patch("patent_gap_finder.clustering.whitespace_detector.qdrant_store")
-    @patch("patent_gap_finder.clustering.whitespace_detector.encode_single")
+    @patch("clustering.whitespace_detector.qdrant_store")
+    @patch("clustering.whitespace_detector.encode_single")
     async def test_novelty_score_clamped(self, mock_encode, mock_qdrant):
         """Novelty score = (1 - avg_sim) * confidence, clamped to [0, 1]."""
-        from patent_gap_finder.clustering.whitespace_detector import detect_whitespace
+        from clustering.whitespace_detector import detect_whitespace
 
         claim_emb = np.zeros(384, dtype=np.float32)
         mock_encode.return_value = claim_emb

@@ -2,7 +2,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from patent_gap_finder.reporting.pdf_report import generate_report
+from reporting.pdf_report import generate_report
 
 SESS_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -42,11 +42,11 @@ def mock_opp():
 
 @pytest.mark.asyncio
 async def test_generate_report_valid(mock_session_data, mock_opp):
-    with patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
-         patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
-         patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
-         patch("patent_gap_finder.db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
-         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
+         patch("db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
+         patch("db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
+         patch("db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
+         patch("db.connection.get_db_session") as mock_db:
 
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm
@@ -67,11 +67,11 @@ async def test_generate_report_valid(mock_session_data, mock_opp):
 
 @pytest.mark.asyncio
 async def test_generate_report_no_opportunities(mock_session_data):
-    with patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
-         patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
-         patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
-         patch("patent_gap_finder.db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
-         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
+         patch("db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
+         patch("db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
+         patch("db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
+         patch("db.connection.get_db_session") as mock_db:
 
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm
@@ -92,11 +92,11 @@ async def test_generate_report_no_opportunities(mock_session_data):
 async def test_generate_report_long_title(mock_session_data, mock_opp):
     mock_session_data.paper_title = "VERY LONG TITLE " * 50
 
-    with patch("patent_gap_finder.db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
-         patch("patent_gap_finder.db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
-         patch("patent_gap_finder.db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
-         patch("patent_gap_finder.db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
-         patch("patent_gap_finder.db.connection.get_db_session") as mock_db:
+    with patch("db.repositories.patent_repo.get_patents_for_session", new_callable=AsyncMock) as mock_patents, \
+         patch("db.repositories.landscape_repo.get_latest_landscape_job", new_callable=AsyncMock) as mock_job, \
+         patch("db.repositories.landscape_repo.get_whitespace_opportunities", new_callable=AsyncMock) as mock_opps, \
+         patch("db.repositories.drafts_repo.get_claim_sets_for_session", new_callable=AsyncMock) as mock_claims, \
+         patch("db.connection.get_db_session") as mock_db:
 
         db_cm = AsyncMock()
         mock_db.return_value.__aenter__.return_value = db_cm

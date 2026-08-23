@@ -22,15 +22,15 @@ def _fake_db_session(mock_session=None):
 
 class TestGetSearchStatusTool:
     async def test_invalid_job_id(self):
-        from patent_gap_finder.tools.get_search_status import get_search_status
+        from tools.get_search_status import get_search_status
 
         result = await get_search_status("not-a-uuid")
         assert result["error"] == "INVALID_JOB_ID"
 
-    @patch("patent_gap_finder.tools.get_search_status.get_db_session")
-    @patch("patent_gap_finder.tools.get_search_status.job_repo")
+    @patch("tools.get_search_status.get_db_session")
+    @patch("tools.get_search_status.job_repo")
     async def test_job_not_found(self, mock_jrepo, mock_db):
-        from patent_gap_finder.tools.get_search_status import get_search_status
+        from tools.get_search_status import get_search_status
 
         mock_db.side_effect = _fake_db_session()
         mock_jrepo.get_job = AsyncMock(return_value=None)
@@ -38,10 +38,10 @@ class TestGetSearchStatusTool:
         result = await get_search_status("12345678-1234-1234-1234-123456789abc")
         assert result["error"] == "JOB_NOT_FOUND"
 
-    @patch("patent_gap_finder.tools.get_search_status.get_db_session")
-    @patch("patent_gap_finder.tools.get_search_status.job_repo")
+    @patch("tools.get_search_status.get_db_session")
+    @patch("tools.get_search_status.job_repo")
     async def test_pending_job(self, mock_jrepo, mock_db):
-        from patent_gap_finder.tools.get_search_status import get_search_status
+        from tools.get_search_status import get_search_status
 
         job = MagicMock()
         job.id = "job-1"
@@ -66,10 +66,10 @@ class TestGetSearchStatusTool:
         assert result["status"] == "pending"
         assert "Poll again" in result["next_step"]
 
-    @patch("patent_gap_finder.tools.get_search_status.get_db_session")
-    @patch("patent_gap_finder.tools.get_search_status.job_repo")
+    @patch("tools.get_search_status.get_db_session")
+    @patch("tools.get_search_status.job_repo")
     async def test_complete_job(self, mock_jrepo, mock_db):
-        from patent_gap_finder.tools.get_search_status import get_search_status
+        from tools.get_search_status import get_search_status
 
         job = MagicMock()
         job.id = "job-1"
@@ -92,7 +92,7 @@ class TestGetSearchStatusTool:
 
         # Patch the celery imports that happen inside the function
         with patch.dict("sys.modules", {
-            "patent_gap_finder.workers.celery_app": MagicMock(),
+            "workers.celery_app": MagicMock(),
             "celery.result": MagicMock(),
         }):
             result = await get_search_status("12345678-1234-1234-1234-123456789abc")
@@ -101,10 +101,10 @@ class TestGetSearchStatusTool:
         assert result["progress"]["patents_found"] == 50
         assert "get_session" in result["next_step"]
 
-    @patch("patent_gap_finder.tools.get_search_status.get_db_session")
-    @patch("patent_gap_finder.tools.get_search_status.job_repo")
+    @patch("tools.get_search_status.get_db_session")
+    @patch("tools.get_search_status.job_repo")
     async def test_failed_job(self, mock_jrepo, mock_db):
-        from patent_gap_finder.tools.get_search_status import get_search_status
+        from tools.get_search_status import get_search_status
 
         job = MagicMock()
         job.id = "job-1"

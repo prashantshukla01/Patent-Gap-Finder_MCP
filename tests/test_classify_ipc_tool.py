@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from patent_gap_finder.db.connection import get_db_session, init_db, reset_db
-from patent_gap_finder.db.repositories import claim_repo, session_repo
-from patent_gap_finder.models.ipc import (
+from db.connection import get_db_session, init_db, reset_db
+from db.repositories import claim_repo, session_repo
+from models.ipc import (
     ClaimIPCMapping,
     IPCClassificationResponse,
 )
-from patent_gap_finder.tools.classify_ipc import classify_ipc
+from tools.classify_ipc import classify_ipc
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────

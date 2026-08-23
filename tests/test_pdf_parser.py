@@ -13,15 +13,15 @@ from pathlib import Path
 import httpx
 import pytest
 
-from patent_gap_finder.models.paper import ParsedPaper, ParsedSection
-from patent_gap_finder.parsers.pdf_parser import (
+from models.paper import ParsedPaper, ParsedSection
+from parsers.pdf_parser import (
     TextBlock,
     _detect_columns,
     _is_heading,
     _sort_blocks_reading_order,
     parse_pdf,
 )
-from patent_gap_finder.utils.text_utils import (
+from utils.text_utils import (
     classify_section_type,
     extract_candidate_claims,
     score_claim_likeness,

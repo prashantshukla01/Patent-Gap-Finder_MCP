@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from patent_gap_finder.search.epo_client import (
+from search.epo_client import (
     EPOAuthError,
     EPOClient,
     EPOQuotaError,
