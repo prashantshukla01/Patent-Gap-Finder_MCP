@@ -135,7 +135,7 @@ class TestMockedLangfuseDispatch:
     async def test_trace_tool_dispatch(self, mock_get_client):
         mock_client = MagicMock()
         mock_trace = MagicMock()
-        mock_client.trace.return_value = mock_trace
+        mock_client.start_observation.return_value = mock_trace
         mock_get_client.return_value = mock_client
 
         @trace_tool("test_dispatched_tool")
@@ -144,5 +144,5 @@ class TestMockedLangfuseDispatch:
 
         result = await dummy("hello", session_id="sess-xyz")
         assert result == {"output": "hello"}
-        mock_client.trace.assert_called_once()
+        mock_client.start_observation.assert_called_once()
         mock_trace.update.assert_called_once()

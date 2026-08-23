@@ -61,7 +61,8 @@ def run_clustering(
 
     import hdbscan
 
-    n_patents = embeddings.shape[0]
+    embeddings_double = np.ascontiguousarray(embeddings, dtype=np.float64)
+    n_patents = embeddings_double.shape[0]
 
     if params is None:
         params = select_hdbscan_params(n_patents)
@@ -82,7 +83,7 @@ def run_clustering(
                 core_dist_n_jobs=1,
                 algorithm="generic",
             )
-            labels = clusterer.fit_predict(embeddings)
+            labels = clusterer.fit_predict(embeddings_double)
             probabilities = clusterer.probabilities_
 
             n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
@@ -111,7 +112,7 @@ def run_clustering(
 
             break
 
-        metrics = compute_clustering_metrics(embeddings, labels)
+        metrics = compute_clustering_metrics(embeddings_double, labels)
         log_score("silhouette_score", metrics["silhouette_score"], comment="HDBSCAN cluster separation")
         log_score("noise_ratio", metrics["noise_ratio"], comment="Percentage of outlier patents")
         log_score("cluster_count", metrics["cluster_count"], comment="Total thematic clusters")

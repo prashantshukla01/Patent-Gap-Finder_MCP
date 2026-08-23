@@ -40,9 +40,9 @@ def get_langfuse_client():
         try:
             from langfuse import Langfuse
 
-            public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
-            secret_key = os.getenv("LANGFUSE_SECRET_KEY")
-            host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            public_key = (os.getenv("LANGFUSE_PUBLIC_KEY") or "").strip("\"'")
+            secret_key = (os.getenv("LANGFUSE_SECRET_KEY") or "").strip("\"'")
+            host = (os.getenv("LANGFUSE_HOST") or os.getenv("LANGFUSE_BASE_URL") or "https://cloud.langfuse.com").strip("\"'")
 
             _langfuse_client = Langfuse(
                 public_key=public_key,
@@ -68,7 +68,7 @@ def log_score(name: str, value: float, comment: Optional[str] = None, trace_id: 
 
     if client and current_trace_id:
         try:
-            client.score(
+            client.create_score(
                 trace_id=current_trace_id,
                 name=name,
                 value=float(value),
@@ -91,9 +91,9 @@ def trace_span(name: str, metadata: Optional[Dict[str, Any]] = None):
 
     if client and trace_id:
         try:
-            span = client.span(
-                trace_id=trace_id,
+            span = client.start_observation(
                 name=name,
+                trace_context={"trace_id": trace_id},
                 metadata=metadata or {},
             )
         except Exception as e:
@@ -104,7 +104,8 @@ def trace_span(name: str, metadata: Optional[Dict[str, Any]] = None):
     except Exception as exc:
         if span:
             try:
-                span.end(level="ERROR", status_message=str(exc))
+                span.update(status_message=str(exc))
+                span.end()
             except Exception:
                 pass
         raise
@@ -112,7 +113,8 @@ def trace_span(name: str, metadata: Optional[Dict[str, Any]] = None):
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
         if span:
             try:
-                span.end(metadata={"latency_ms": elapsed_ms, **(metadata or {})})
+                span.update(metadata={"latency_ms": elapsed_ms, **(metadata or {})})
+                span.end()
             except Exception:
                 pass
         logger.debug("Span [%s] completed in %.2fms", name, elapsed_ms)
@@ -136,7 +138,7 @@ def trace_tool(tool_name: Optional[str] = None):
                     session_id = args[0]
 
             trace = None
-            trace_id = str(uuid.uuid4())
+            trace_id = uuid.uuid4().hex
             token_trace = _active_trace_id.set(trace_id)
             token_session = _active_session_id.set(session_id)
 
@@ -148,12 +150,11 @@ def trace_tool(tool_name: Optional[str] = None):
 
             if client:
                 try:
-                    trace = client.trace(
-                        id=trace_id,
+                    trace = client.start_observation(
                         name=name,
-                        session_id=session_id,
+                        trace_context={"trace_id": trace_id},
                         input=input_summary,
-                        metadata={"framework": "fastmcp", "tool": name},
+                        metadata={"framework": "fastmcp", "tool": name, "session_id": session_id or ""},
                     )
                 except Exception as e:
                     logger.debug("Failed to create Langfuse tool trace for %s: %s", name, e)
@@ -169,6 +170,7 @@ def trace_tool(tool_name: Optional[str] = None):
                             output=_sanitize_output(result),
                             metadata={"latency_ms": elapsed_ms},
                         )
+                        trace.end()
                     except Exception:
                         pass
 
@@ -182,6 +184,7 @@ def trace_tool(tool_name: Optional[str] = None):
                             status_message=str(exc),
                             metadata={"latency_ms": elapsed_ms, "error": str(exc)},
                         )
+                        trace.end()
                     except Exception:
                         pass
                 raise
@@ -196,18 +199,17 @@ def trace_tool(tool_name: Optional[str] = None):
             session_id = kwargs.get("session_id")
 
             trace = None
-            trace_id = str(uuid.uuid4())
+            trace_id = uuid.uuid4().hex
             token_trace = _active_trace_id.set(trace_id)
             token_session = _active_session_id.set(session_id)
 
             if client:
                 try:
-                    trace = client.trace(
-                        id=trace_id,
+                    trace = client.start_observation(
                         name=name,
-                        session_id=session_id,
+                        trace_context={"trace_id": trace_id},
                         input=kwargs,
-                        metadata={"framework": "fastmcp", "tool": name},
+                        metadata={"framework": "fastmcp", "tool": name, "session_id": session_id or ""},
                     )
                 except Exception as e:
                     logger.debug("Failed to create Langfuse trace for %s: %s", name, e)
@@ -222,6 +224,7 @@ def trace_tool(tool_name: Optional[str] = None):
                             output=_sanitize_output(result),
                             metadata={"latency_ms": elapsed_ms},
                         )
+                        trace.end()
                     except Exception:
                         pass
                 return result
@@ -233,6 +236,7 @@ def trace_tool(tool_name: Optional[str] = None):
                             status_message=str(exc),
                             metadata={"latency_ms": elapsed_ms, "error": str(exc)},
                         )
+                        trace.end()
                     except Exception:
                         pass
                 raise
