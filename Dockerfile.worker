@@ -31,4 +31,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src"
 ENV PYTHONUNBUFFERED=1
 
-CMD ["celery", "-A", "patent_gap_finder.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+CMD ["celery", "-A", "workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]

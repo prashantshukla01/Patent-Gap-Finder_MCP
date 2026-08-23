@@ -7,4 +7,4 @@ if [ -n "$DATABASE_URL" ]; then
 fi
 
 echo "Starting MCP server..."
-exec python -m patent_gap_finder.server
+exec python -m server

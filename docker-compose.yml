@@ -40,7 +40,7 @@ services:
 
   worker:
     build: .
-    command: celery -A patent_gap_finder.workers.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=2
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:%40Blackbuck08@postgres:5432/patent_gap_finder
       - REDIS_URL=redis://redis:6379/0
@@ -55,7 +55,7 @@ services:
 
   mcp_server:
     build: .
-    command: python -m patent_gap_finder.server
+    command: python -m server
     ports:
       - "8000:8000"
     environment:

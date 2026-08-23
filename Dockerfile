@@ -58,4 +58,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -sf http://localhost:${PORT:-8000}/health || exit 1
 
-CMD ["python", "-m", "patent_gap_finder.server"]
+CMD ["python", "-m", "server"]
